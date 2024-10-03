@@ -1,6 +1,9 @@
 import requests
 import pandas as pd
 import time
+import json
+from os import getcwd, mkdir
+from os.path import isdir
 
 PROGRESS_FILE_NAME = "temp_transit_duration.csv"
 RIDES_FILE_NAME = "EPP_Uber_Rides_2024.csv"
@@ -12,7 +15,7 @@ API_CALL_RATE = 25 #per second
 #TO DO:
 # Have API call rate check on time pass rather than waiting a set time.
 # Have script check for existence of bad coordinates file. If it is there create a new file.
-# add a time out function for requests
+# add a time-out function for requests
 # add the functionality to determine what requests still need to be made/have been made
 
 
@@ -46,14 +49,14 @@ def retrieve_rides(filename: str) -> list:
         start_long = rides_df.iloc[i]["Pickup Longitude"]
         end_lat = rides_df.iloc[i]["Drop Off Latitude"]
         end_long = rides_df.iloc[i]["Drop Off Longitude"]
-        id = rides_df.iloc[i]["ID"]
+        id_ = rides_df.iloc[i]["ID"]
 
         request_date = rides_df.iloc[i]["Request Date"]
         request_time = rides_df.iloc[i]["Request Time"]
         epoch_time = calculate_epoch_time(request_date, request_time)
         
 
-        route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id, "Request Time": epoch_time}
+        route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": epoch_time}
         all_routes.append(route_data)
 
     return all_routes
@@ -105,10 +108,12 @@ def add_transit_duration(rides, api_key):
             print(request_url)
             continue
 
-        json = transit_route.json()
+        request_json = transit_route.json()
+        archive_api_call_results(request_json, ride["ID"])
+
         try:
-            if check_transit_mode(json): #ensures no driving directions were given
-                ride["Transit Duration"] = json["routes"][0]["legs"][0]["duration"]["text"]
+            if check_transit_mode(request_json): #ensures no driving directions were given
+                ride["Transit Duration"] = request_json["routes"][0]["legs"][0]["duration"]["text"]
                 print(str(ride["ID"]) + ":", ride["Transit Duration"])
 
                 with open(PROGRESS_FILE_NAME, "a+") as file:
@@ -131,19 +136,29 @@ def add_transit_duration(rides, api_key):
     return rides
 
 
-def test():
+def test(ride_data):
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
     #request_url = construct_request(HOME_TO_SCHOOL, api_key)
-    request_url = construct_request(EPP_EXAMPLE, api_key)
+    request_url = construct_request(ride_data, api_key)
     print(request_url)
     route = requests.get(request_url)
-    duration = route.json()["routes"][0]["legs"][0]["duration"]["text"]
+    request_json = route.json()
+    duration = request_json["routes"][0]["legs"][0]["duration"]["text"]
     print(duration)
 
+    serialized_json = json.dumps(request_json, indent=4)
+    with open("/jsons/test.json", "w+") as file:
+        file.write(serialized_json)
 
-def check_transit_mode(json):
+def json_load_test():
+    with open("test.json", 'r') as file:
+        object = json.load(file)
+    print(object["routes"][0]["legs"][0]["duration"])
+
+
+def check_transit_mode(request_json):
     """Checks the direction type given by api call."""
-    for step in json["routes"][0]["legs"][0]["steps"]:
+    for step in request_json["routes"][0]["legs"][0]["steps"]:
         if step["travel_mode"] == "DRIVING":
             return False
     return True
@@ -193,20 +208,30 @@ def retrieve_api_key(file_name: str) -> str:
     api_key = ""
     with open(file_name, "r") as file:
         api_key = file.read()
+    assert api_key != ""
     return api_key
 
 
+def archive_api_call_results(result_json: dict, route_id: int):
+    """Archives results of api calls for future reference."""
+    path = getcwd() + "\\archive"
+    if not isdir(path): # check for existence of archive folder, if it does not exist create it
+        mkdir(path)
+
+    serialized_json = json.dumps(result_json, indent=4)
+    with open(f"{path}\\{route_id}.json", "w+") as file:
+        file.write(serialized_json)
+
+
 if __name__ == "__main__":
-    #test()
+    #test(EPP_EXAMPLE)
+    #json_load_test()
+
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    # request_url = construct_request(EPP_EXAMPLE)
-    # route = requests.get(request_url)
-    # print(request_url)
-    # json = route.json()
 
     all_rides = retrieve_rides(RIDES_FILE_NAME)
     all_rides = add_transit_duration(all_rides, api_key)
-    #
+
     transit_duration_df = pool_data(all_rides)
     transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
     transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
