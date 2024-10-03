@@ -1,6 +1,6 @@
 import requests
 import pandas as pd
-from time import sleep
+import time
 
 PROGRESS_FILE_NAME = "temp_transit_duration.csv"
 RIDES_FILE_NAME = "EPP_Uber_Rides_2024.csv"
@@ -88,7 +88,7 @@ def add_transit_duration(rides, api_key):
         request_url = construct_request(ride, api_key)
         transit_route = requests.get(request_url)
 
-        sleep(1/API_CALL_RATE)
+        time.sleep(1/API_CALL_RATE)
 
         if ride["Start"] == ride["End"]:
             with open("bad coordinates.txt", "a+") as file:
@@ -127,7 +127,8 @@ def add_transit_duration(rides, api_key):
 
 def test():
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    request_url = construct_request(HOME_TO_SCHOOL, api_key)
+    #request_url = construct_request(HOME_TO_SCHOOL, api_key)
+    request_url = construct_request(EPP_EXAMPLE, api_key)
     print(request_url)
     route = requests.get(request_url)
     duration = route.json()["routes"][0]["legs"][0]["duration"]["text"]
@@ -142,12 +143,44 @@ def check_transit_mode(json):
     return True
 
 
-def calculate_request_time()->int:
-    pass
+def calculate_epoch_time(date_str, time_str)->int:
+    """Determines seconds since start of epoch based on local time entry."""
+    # convert date info into struct_time object
+    split_date = date_str.split('/')
+    for i in range(len(split_date)):
+        if len(split_date[i]) == 1:
+            split_date[i] = '0' + split_date[i] #formatting requires double-digit entries for days & months
+    fixed_date = '/'.join(split_date)
+    date_format = "%m/%d/%Y"
+    date_struct = time.strptime(fixed_date, date_format)  # documentation https://docs.python.org/3.12/library/datetime.html#strftime-and-strptime-behavior
+
+    # convert time info into struct_time object
+    if len(time_str) == 7:
+        time_str = '0' + time_str #double-digit formatting is also required for minutes and hours
+    time_format = "%I:%M %p"
+    time_struct = time.strptime(time_str, time_format)
+
+    #combined into a single struct_time object
+    input_tuple = (date_struct.tm_year,
+                   date_struct.tm_mon,
+                   date_struct.tm_mday,
+                   time_struct.tm_hour,
+                   time_struct.tm_min,
+                   time_struct.tm_sec,
+                   date_struct.tm_wday,
+                   date_struct.tm_yday,
+                   date_struct.tm_isdst)
+
+    combined_struct = time.struct_time(input_tuple)
+
+    #convert struct_time object into # of seconds since 1970
+    epoch_time = time.mktime(combined_struct)
+    return int(epoch_time) #google api requires whole numbers
 
 
 def create_error_record():
     pass
+
 
 def retrieve_api_key(file_name: str) -> str:
     """Retrieves the contents of the specified file."""
@@ -157,19 +190,19 @@ def retrieve_api_key(file_name: str) -> str:
     return api_key
 
 
-
 if __name__ == "__main__":
-    api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    # request_url = construct_request(EPP_EXAMPLE)
-    # route = requests.get(request_url)
-    # print(request_url)
-    # json = route.json()
-
-    all_rides = retrieve_rides(RIDES_FILE_NAME)
-    all_rides = add_transit_duration(all_rides, api_key)
+    test()
+    # api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    # # request_url = construct_request(EPP_EXAMPLE)
+    # # route = requests.get(request_url)
+    # # print(request_url)
+    # # json = route.json()
     #
-    transit_duration_df = pool_data(all_rides)
-    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
-    transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
-    transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
+    # all_rides = retrieve_rides(RIDES_FILE_NAME)
+    # all_rides = add_transit_duration(all_rides, api_key)
+    # #
+    # transit_duration_df = pool_data(all_rides)
+    # transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
+    # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
+    # transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
+    # transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
