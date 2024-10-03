@@ -161,15 +161,15 @@ def calculate_epoch_time(date_str, time_str)->int:
     time_struct = time.strptime(time_str, time_format)
 
     #combined into a single struct_time object
-    input_tuple = (date_struct.tm_year,
-                   date_struct.tm_mon,
-                   date_struct.tm_mday,
-                   time_struct.tm_hour,
-                   time_struct.tm_min,
-                   time_struct.tm_sec,
-                   date_struct.tm_wday,
-                   date_struct.tm_yday,
-                   date_struct.tm_isdst)
+    input_tuple = (date_struct.tm_year, #year
+                   date_struct.tm_mon, #month
+                   date_struct.tm_mday, #day
+                   time_struct.tm_hour, #hour
+                   time_struct.tm_min, #minute
+                   time_struct.tm_sec, #second
+                   date_struct.tm_wday, #day of week
+                   date_struct.tm_yday, #day of year
+                   date_struct.tm_isdst) #daylight savings flag
 
     combined_struct = time.struct_time(input_tuple)
 
