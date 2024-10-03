@@ -24,12 +24,12 @@ def encode_endpoints (start_coords: tuple, end_coords: tuple) -> str :
     return f"{origin}&{destination}"
 
 
-def construct_request(coordinates: dict, api_key: str) -> str:
+def construct_request(ride_data: dict, api_key: str) -> str:
     """Creates the request used to retrieve route recommendations from Google."""
     output_format = "json"
-    endpoints = encode_endpoints(coordinates["Start"], coordinates["End"])
+    endpoints = encode_endpoints(ride_data["Start"], ride_data["End"])
     mode = "mode=transit"
-    departure_time = "departure_time=" + str(coordinates["Request Time"])
+    departure_time = "departure_time=" + str(ride_data["Request Time"])
 
     request_url = f"https://maps.googleapis.com/maps/api/directions/"
     request_url += f"{output_format}?{endpoints}&key={api_key}&{mode}&{departure_time}"
@@ -40,7 +40,7 @@ def construct_request(coordinates: dict, api_key: str) -> str:
 def retrieve_rides(filename: str) -> list:
     """Retrieve all start & end coordinates from EPP data file."""
     rides_df = pd.read_csv(filename)
-    ride_coords = []
+    all_routes = []
     for i in range(rides_df.shape[0]):
         start_lat = rides_df.iloc[i]["Pickup Latitude"]
         start_long = rides_df.iloc[i]["Pickup Longitude"]
@@ -53,10 +53,10 @@ def retrieve_rides(filename: str) -> list:
         epoch_time = calculate_epoch_time(request_date, request_time)
         
 
-        route_coords = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id, "Request Time": epoch_time}
-        ride_coords.append(route_coords)
+        route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id, "Request Time": epoch_time}
+        all_routes.append(route_data)
 
-    return ride_coords
+    return all_routes
 
 
 def pool_data(rides: list):
@@ -197,18 +197,18 @@ def retrieve_api_key(file_name: str) -> str:
 
 
 if __name__ == "__main__":
-    test()
-    # api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    # # request_url = construct_request(EPP_EXAMPLE)
-    # # route = requests.get(request_url)
-    # # print(request_url)
-    # # json = route.json()
+    #test()
+    api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    # request_url = construct_request(EPP_EXAMPLE)
+    # route = requests.get(request_url)
+    # print(request_url)
+    # json = route.json()
+
+    all_rides = retrieve_rides(RIDES_FILE_NAME)
+    all_rides = add_transit_duration(all_rides, api_key)
     #
-    # all_rides = retrieve_rides(RIDES_FILE_NAME)
-    # all_rides = add_transit_duration(all_rides, api_key)
-    # #
-    # transit_duration_df = pool_data(all_rides)
-    # transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
-    # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    # transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
-    # transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
+    transit_duration_df = pool_data(all_rides)
+    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
+    transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
+    transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
+    transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
