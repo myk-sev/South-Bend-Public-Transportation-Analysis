@@ -5,8 +5,8 @@ import time
 PROGRESS_FILE_NAME = "temp_transit_duration.csv"
 RIDES_FILE_NAME = "EPP_Uber_Rides_2024.csv"
 API_KEY_FILE_NAME = "api-key.txt"
-HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335)}
-EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236)}
+HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
+EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
 API_CALL_RATE = 25 #per second
 
 #TO DO:
@@ -26,11 +26,13 @@ def encode_endpoints (start_coords: tuple, end_coords: tuple) -> str :
 
 def construct_request(coordinates: dict, api_key: str) -> str:
     """Creates the request used to retrieve route recommendations from Google."""
-    endpoints = encode_endpoints(coordinates["Start"], coordinates["End"])
-    mode =  "mode=transit"
-    request_url = f"https://maps.googleapis.com/maps/api/directions/"
     output_format = "json"
-    request_url += f"{output_format}?{endpoints}&key={api_key}&{mode}"
+    endpoints = encode_endpoints(coordinates["Start"], coordinates["End"])
+    mode = "mode=transit"
+    departure_time = "departure_time=" + str(coordinates["Request Time"])
+
+    request_url = f"https://maps.googleapis.com/maps/api/directions/"
+    request_url += f"{output_format}?{endpoints}&key={api_key}&{mode}&{departure_time}"
 
     return request_url
 
@@ -45,9 +47,13 @@ def retrieve_rides(filename: str) -> list:
         end_lat = rides_df.iloc[i]["Drop Off Latitude"]
         end_long = rides_df.iloc[i]["Drop Off Longitude"]
         id = rides_df.iloc[i]["ID"]
+
+        request_date = rides_df.iloc[i]["Request Date"]
+        request_time = rides_df.iloc[i]["Request Time"]
+        epoch_time = calculate_epoch_time(request_date, request_time)
         
 
-        route_coords = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id}
+        route_coords = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id, "Request Time": epoch_time}
         ride_coords.append(route_coords)
 
     return ride_coords
