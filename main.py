@@ -213,8 +213,8 @@ def massage_time(source_unix_time:int, target_week_unix:int) -> int:
 
     one_day_delta = datetime.timedelta(days=1) # time delta class used to auto handle changes in days, months, years, ect
 
-    today = datetime.date.today() # time class compatible with time delta class
-    new_day = today + one_day_delta * (source_day_of_the_week - target_day_of_the_week)
+    target_week_datetime = datetime.date.fromtimestamp(target_week_unix) # time class compatible with time delta class
+    new_day = target_week_datetime + one_day_delta * (source_day_of_the_week - target_day_of_the_week)
     new_tuple = new_day.timetuple()
 
     combined_tuple = (new_tuple.tm_year, #year
