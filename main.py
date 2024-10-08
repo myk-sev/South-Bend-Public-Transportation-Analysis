@@ -1,9 +1,11 @@
 import requests
 import pandas as pd
 import time
+import datetime
 import json
 from os import getcwd, mkdir
 from os.path import isdir
+
 
 PROGRESS_FILE_NAME = "temp_transit_duration.csv"
 RIDES_FILE_NAME = "EPP_Uber_Rides_2024.csv"
@@ -197,6 +199,37 @@ def calculate_epoch_time(date_str, time_str)->int:
     #convert struct_time object into # of seconds since 1970
     epoch_time = time.mktime(combined_struct)
     return int(epoch_time) #google api requires whole numbers
+
+
+def massage_time(source_unix_time:int) -> int:
+    """Takes the time retrieved from the data and aligns it with the specified week.
+
+     The accepted range for the Directions API is ~ -7days to +3 months."""
+    source_time_tuple = time.localtime(source_unix_time)
+    source_day_of_the_week = source_time_tuple.tm_wday #tuple format is used to extract and match days of the week
+
+    today_time_tuple = time.localtime()
+    today_day_of_the_week = today_time_tuple.tm_wday # 0 is Monday, 7 is Sunday
+
+    one_day_delta = datetime.timedelta(days=1) # time delta class used to auto handle changes in days, months, years, ect
+
+    today = datetime.date.today() # time class compatible with time delta class
+    new_day = today + one_day_delta * (source_day_of_the_week - today_day_of_the_week)
+    new_tuple = new_day.timetuple()
+
+    combined_tuple = (new_tuple.tm_year, #year
+                      new_tuple.tm_mon,  # month
+                      new_tuple.tm_mday,  # day
+                      source_time_tuple.tm_hour,  # hour
+                      source_time_tuple.tm_min,  # minute
+                      source_time_tuple.tm_sec,  # second
+                      new_tuple.tm_wday,  # day of week
+                      new_tuple.tm_yday,  # day of year
+                      new_tuple.tm_isdst)  # daylight savings flag
+
+    combined_unix = int(time.mktime(combined_tuple))
+
+    return combined_unix
 
 
 def create_error_record():
