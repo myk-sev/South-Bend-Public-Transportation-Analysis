@@ -14,6 +14,9 @@ HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request T
 EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
 API_CALL_RATE = 25 #per second
 
+DATA_TZ = -5 #offset relative to UTC in hours
+LOCAL_TZ = -6
+
 #TO DO:
 # Have API call rate check on time pass rather than waiting a set time.
 # Have script check for existence of bad coordinates file. If it is there create a new file.
@@ -140,7 +143,6 @@ def add_transit_duration(rides, api_key):
 
 def test(ride_data):
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    #request_url = construct_request(HOME_TO_SCHOOL, api_key)
     request_url = construct_request(ride_data, api_key)
     print(request_url)
     route = requests.get(request_url)
@@ -187,7 +189,7 @@ def calculate_epoch_time(date_str, time_str)->int:
     input_tuple = (date_struct.tm_year, #year
                    date_struct.tm_mon, #month
                    date_struct.tm_mday, #day
-                   time_struct.tm_hour, #hour
+                   time_struct.tm_hour + (LOCAL_TZ - DATA_TZ), #hour
                    time_struct.tm_min, #minute
                    time_struct.tm_sec, #second
                    date_struct.tm_wday, #day of week
@@ -257,16 +259,16 @@ def archive_api_call_results(result_json: dict, route_id: int):
 
 
 if __name__ == "__main__":
-    #test(EPP_EXAMPLE)
+    test(EPP_EXAMPLE)
     #json_load_test()
 
-    api_key = retrieve_api_key(API_KEY_FILE_NAME)
-
-    all_rides = retrieve_rides(RIDES_FILE_NAME)
-    all_rides = add_transit_duration(all_rides, api_key)
-
-    transit_duration_df = pool_data(all_rides)
-    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
-    transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
-    transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
+    # api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    #
+    # all_rides = retrieve_rides(RIDES_FILE_NAME)
+    # all_rides = add_transit_duration(all_rides, api_key)
+    #
+    # transit_duration_df = pool_data(all_rides)
+    # transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
+    # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
+    # transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
+    # transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
