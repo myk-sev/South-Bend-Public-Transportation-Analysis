@@ -6,16 +6,19 @@ import json
 from os import getcwd, mkdir
 from os.path import isdir
 
-
 PROGRESS_FILE_NAME = "temp_transit_duration.csv"
 RIDES_FILE_NAME = "EPP_Uber_Rides_2024.csv"
+ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
-HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
-EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
 API_CALL_RATE = 25 #per second
 
 DATA_TZ = -5 #offset relative to UTC in hours
-LOCAL_TZ = -6
+LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
+
+### Test Routes ###
+HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
+EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
+###################
 
 #TO DO:
 # Have API call rate check on time pass rather than waiting a set time.
@@ -75,6 +78,7 @@ def pool_data(rides: list):
     end_lats = []
     end_longs = []
     durations = []
+
     for ride in rides:
         if "Transit Duration" in ride:
             ids.append(ride["ID"])
@@ -105,12 +109,11 @@ def add_transit_duration(rides, api_key):
         time.sleep(1/API_CALL_RATE)
 
         if ride["Start"] == ride["End"]:
-            with open("bad coordinates.txt", "a+") as file:
+            print("Bad coordinates at ID:", ride["ID"])
+            with open(ERRORS_FILE_NAME, "a+") as file:
                 file.write("Bad coordinates at ID:" + str(ride["ID"]) + '\n')
                 file.write(request_url + '\n')
 
-            print("Bad coordinates at ID:", ride["ID"])
-            print(request_url)
             continue
 
         request_json = transit_route.json()
@@ -128,36 +131,17 @@ def add_transit_duration(rides, api_key):
 
             else:
                 print("Route:", ride["ID"], "was provided driving directions.")
-                print(request_url)
+                with open(ERRORS_FILE_NAME, "a+") as file:
+                    file.write("Route " + str(ride["ID"]) + " was provided driving directions.\n")
+                    file.write(request_url + '\n')
 
         except:
             print("No route at ID:", ride["ID"])
-            # print(request_url)
-            with open("bad coordinates.txt", "a+") as file:
+            with open(ERRORS_FILE_NAME, "a+") as file:
                 file.write("No route at ID:" + str(ride["ID"]) + '\n')
                 file.write(request_url + '\n')
 
-
     return rides
-
-
-def test(ride_data):
-    api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    request_url = construct_request(ride_data, api_key)
-    print(request_url)
-    route = requests.get(request_url)
-    request_json = route.json()
-    duration = request_json["routes"][0]["legs"][0]["duration"]["text"]
-    print(duration)
-
-    serialized_json = json.dumps(request_json, indent=4)
-    with open("/jsons/test.json", "w+") as file:
-        file.write(serialized_json)
-
-def json_load_test():
-    with open("test.json", 'r') as file:
-        object = json.load(file)
-    print(object["routes"][0]["legs"][0]["duration"])
 
 
 def check_transit_mode(request_json):
@@ -234,16 +218,14 @@ def massage_time(source_unix_time:int, target_week_unix:int) -> int:
     return combined_unix
 
 
-def create_error_record():
-    pass
-
-
 def retrieve_api_key(file_name: str) -> str:
     """Retrieves the contents of the specified file."""
     api_key = ""
     with open(file_name, "r") as file:
         api_key = file.read()
+
     assert api_key != ""
+
     return api_key
 
 
@@ -256,6 +238,28 @@ def archive_api_call_results(result_json: dict, route_id: int):
     serialized_json = json.dumps(result_json, indent=4)
     with open(f"{path}\\{route_id}.json", "w+") as file:
         file.write(serialized_json)
+
+
+def create_error_record():
+    pass
+
+
+def test(ride_data):
+    api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    request_url = construct_request(ride_data, api_key)
+    print(request_url)
+    route = requests.get(request_url)
+    request_json = route.json()
+    duration = request_json["routes"][0]["legs"][0]["duration"]["text"]
+    print(duration)
+
+    archive_api_call_results(request_json, "test")
+
+
+def json_load_test():
+    with open("test.json", 'r') as file:
+        api_call_results = json.load(file)
+    print(api_call_results["routes"][0]["legs"][0]["duration"])
 
 
 if __name__ == "__main__":
