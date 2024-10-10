@@ -14,6 +14,7 @@ API_CALL_RATE = 25 #per second
 
 DATA_TZ = -5 #offset relative to UTC in hours
 LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
+TARGET_WEEK = "11/06/2024"
 
 ### Test Routes ###
 HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
@@ -61,7 +62,10 @@ def retrieve_rides(filename: str) -> list:
 
         request_date = rides_df.iloc[i]["Request Date"]
         request_time = rides_df.iloc[i]["Request Time"]
-        epoch_time = calculate_epoch_time(request_date, request_time)
+
+        source_epoch_time = calculate_epoch_time(request_date, request_time)
+        target_week_epoch = calculate_epoch_time(TARGET_WEEK, "5:00 PM") # time_str here is not used. Only provided to fulfill argument requirements.
+        epoch_time = massage_time(source_epoch_time, target_week_epoch)
         
 
         route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": epoch_time}
@@ -123,6 +127,7 @@ def add_transit_duration(rides, api_key):
             if check_transit_mode(request_json): #ensures no driving directions were given
                 ride["Transit Duration"] = request_json["routes"][0]["legs"][0]["duration"]["text"]
                 print(str(ride["ID"]) + ":", ride["Transit Duration"])
+                print(request_url)
 
                 with open(PROGRESS_FILE_NAME, "a+") as file:
                     temp_data = str(ride["ID"]) + ","
@@ -181,9 +186,8 @@ def calculate_epoch_time(date_str, time_str)->int:
                    date_struct.tm_isdst) #daylight savings flag
 
     combined_struct = time.struct_time(input_tuple)
+    epoch_time = time.mktime(combined_struct) #convert struct_time object into num of seconds since 1970
 
-    #convert struct_time object into # of seconds since 1970
-    epoch_time = time.mktime(combined_struct)
     return int(epoch_time) #google api requires whole numbers
 
 
@@ -263,16 +267,16 @@ def json_load_test():
 
 
 if __name__ == "__main__":
-    test(EPP_EXAMPLE)
+    #test(EPP_EXAMPLE)
     #json_load_test()
 
-    # api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    #
-    # all_rides = retrieve_rides(RIDES_FILE_NAME)
-    # all_rides = add_transit_duration(all_rides, api_key)
-    #
-    # transit_duration_df = pool_data(all_rides)
-    # transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
-    # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    # transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
-    # transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
+    api_key = retrieve_api_key(API_KEY_FILE_NAME)
+
+    all_rides = retrieve_rides(RIDES_FILE_NAME)
+    all_rides = add_transit_duration(all_rides, api_key)
+
+    transit_duration_df = pool_data(all_rides)
+    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
+    transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
+    transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
+    transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
