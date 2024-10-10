@@ -5,23 +5,20 @@ RIDES_FILE_NAME = "EPP_Uber_Rides_2024"
 
 
 def fix_time(time: str) -> int:
-    converted_time = 0
+    total_time = 0
+    components = time.split(" ")
+    for i in range(0,len(components),2):
+        pair = components[i:i+2]
+        if "day" in pair[1]:
+            total_time += 60 * 24 * int(pair[0])
+        elif "hour" in pair[1]:
+            total_time += 60 * int(pair[0])
+        elif "min" in pair[1]:
+            total_time += int(pair[0])
+        else:
+            raise "invalid time type. investigate"
 
-    if "mins" in time: time = time.removesuffix(" mins")
-    else: time = time.removesuffix(" min")
-
-    if len(time) < 3:
-        converted_time += int(time)
-    else:
-        converted_time += 60 * int(time[0])
-        time = time[1:]
-
-        if "hours" in time: time = time.removeprefix(" hours ")
-        else: time = time.removeprefix(" hour ")
-
-        converted_time += int(time)
-
-    return converted_time
+    return total_time
 
 
 if __name__ == "__main__":
@@ -51,8 +48,3 @@ if __name__ == "__main__":
 
     start_coords_df.to_csv(TEMP_INPUT_NAME + "_start_coords.csv")
     end_coords_df.to_csv(TEMP_INPUT_NAME + "_end_coords.csv")
-
-
-
-
-
