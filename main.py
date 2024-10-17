@@ -3,7 +3,7 @@ import pandas as pd
 import time
 import datetime
 import json
-from os import getcwd, mkdir
+from os import getcwd, mkdir, listdir
 from os.path import isdir
 
 PROGRESS_FILE_NAME = "temp_transit_duration.csv"
@@ -11,6 +11,7 @@ RIDES_FILE_NAME = "EPP_Uber_Rides_2024.csv"
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
 API_CALL_RATE = 25 #per second
+NEW_DATA = False #set this to true if this script is being executed on a data set for the first time
 
 DATA_TZ = -5 #offset relative to UTC in hours
 LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
@@ -20,6 +21,15 @@ TARGET_WEEK = "11/06/2024"
 HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
 EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
 ###################
+
+#TO DO October Week 3:
+# Transition request queue from a basis on the csv to a computed list of untried calls
+# Alter transit time computation to include time until directions start
+
+#TO DO October Week 4:
+# Decouple data processing from request creation & processing
+# Create final data set
+
 
 #TO DO:
 # Have API call rate check on time pass rather than waiting a set time.
@@ -104,13 +114,13 @@ def pool_data(rides: list):
     return duration_df
 
 
-def add_transit_duration(rides, api_key):
-    """Retrieves quickest public transportation directions from Google API. Duration is added to rides dictionary."""
-    for ride in rides:
+def execute_all_api_calls(ride, api_key):
+    """Retrieves quickest public transportation directions from Google API. Result is archived on machine."""
+    for ride in all_rides:
+        time.sleep(1 / API_CALL_RATE)
+
         request_url = construct_request(ride, api_key)
         transit_route = requests.get(request_url)
-
-        time.sleep(1/API_CALL_RATE)
 
         if ride["Start"] == ride["End"]:
             print("Bad coordinates at ID:", ride["ID"])
@@ -118,33 +128,54 @@ def add_transit_duration(rides, api_key):
                 file.write("Bad coordinates at ID:" + str(ride["ID"]) + '\n')
                 file.write(request_url + '\n')
 
-            continue
+        else:
+            request_json = transit_route.json()
+            archive_api_call_results(request_json, ride["ID"])
 
-        request_json = transit_route.json()
-        archive_api_call_results(request_json, ride["ID"])
+            try:
+                if check_transit_mode(request_json): #ensures no driving directions were given
+                    duration = request_json["routes"][0]["legs"][0]["duration"]["text"]
+                    print(str(ride["ID"]) + ":", duration)
 
-        try:
-            if check_transit_mode(request_json): #ensures no driving directions were given
-                ride["Transit Duration"] = request_json["routes"][0]["legs"][0]["duration"]["text"]
-                print(str(ride["ID"]) + ":", ride["Transit Duration"])
-                print(request_url)
+                else:
+                    print("Route:", ride["ID"], "was provided driving directions.")
+                    with open(ERRORS_FILE_NAME, "a+") as file:
+                        file.write("Route " + str(ride["ID"]) + " was provided driving directions.\n")
+                        file.write(request_url + '\n')
 
-                with open(PROGRESS_FILE_NAME, "a+") as file:
-                    temp_data = str(ride["ID"]) + ","
-                    temp_data += ride["Transit Duration"] + "\n"
-                    file.write(temp_data)
-
-            else:
-                print("Route:", ride["ID"], "was provided driving directions.")
+            except:
+                print("No route at ID:", ride["ID"])
                 with open(ERRORS_FILE_NAME, "a+") as file:
-                    file.write("Route " + str(ride["ID"]) + " was provided driving directions.\n")
+                    file.write("No route at ID:" + str(ride["ID"]) + '\n')
                     file.write(request_url + '\n')
 
-        except:
-            print("No route at ID:", ride["ID"])
-            with open(ERRORS_FILE_NAME, "a+") as file:
-                file.write("No route at ID:" + str(ride["ID"]) + '\n')
-                file.write(request_url + '\n')
+
+def add_transit_durations(rides) -> list:
+    """Goes through all archived API calls. Retrieves public transit duration from all successful calls."""
+    archive_path = getcwd() + "\\archive"
+    file_names = listdir(archive_path)
+    ids = [int(file_name.removesuffix(".json")) for file_name in file_names]
+
+    for ride in rides:
+        if ride["ID"] % 100 == 0:
+            print("Ride", ride["ID"], "processed.")
+        if ride["ID"] in ids:
+
+            with open(archive_path+ "\\" + str(ride["ID"]) + ".json", 'r') as file:
+                api_call_results = json.load(file)
+                text = "".join(line for line in file)
+                if "DRIVING" in text:
+                    print("\n\n\n PROBLEM \n\n\n")
+
+            #these skip archived results that do not provide public transit direction
+            if api_call_results["status"] == "ZERO_RESULTS": #this occurs when google could not find a reasonable connecting route
+                continue
+            if not check_transit_mode(api_call_results):  # ensures no driving directions were given
+                continue
+
+
+            duration = api_call_results["routes"][0]["legs"][0]["duration"]["text"]
+            ride["Transit Duration"] = duration
 
     return rides
 
@@ -272,11 +303,14 @@ if __name__ == "__main__":
 
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
 
-    all_rides = retrieve_rides(RIDES_FILE_NAME)
-    all_rides = add_transit_duration(all_rides, api_key)
+    all_rides= retrieve_rides(RIDES_FILE_NAME)
+    if NEW_DATA:
+        execute_all_api_calls(all_rides, api_key)
+
+    all_rides = add_transit_durations(all_rides)
 
     transit_duration_df = pool_data(all_rides)
     transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
     transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Transit_Duration_Start_Coords v1.csv")
-    transit_end_df.to_csv("Transit_Duration_End_Coords v1.csv")
+    transit_start_df.to_csv("Transit_Duration_Start_Coords Decouple Test.csv")
+    transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
