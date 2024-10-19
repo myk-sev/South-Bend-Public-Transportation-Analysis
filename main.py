@@ -22,14 +22,8 @@ HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request T
 EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
 ###################
 
-#TO DO October Week 3:
-# Transition request queue from a basis on the csv to a computed list of untried calls
-# Alter transit time computation to include time until directions start
-
 #TO DO October Week 4:
-# Decouple data processing from request creation & processing
 # Create final data set
-
 
 #TO DO:
 # Have API call rate check on time pass rather than waiting a set time.
@@ -114,7 +108,7 @@ def pool_data(rides: list):
     return duration_df
 
 
-def execute_all_api_calls(ride, api_key):
+def execute_all_api_calls(all_rides, api_key):
     """Retrieves quickest public transportation directions from Google API. Result is archived on machine."""
     for ride in all_rides:
         time.sleep(1 / API_CALL_RATE)
@@ -164,15 +158,12 @@ def add_transit_durations(rides) -> list:
             with open(archive_path+ "\\" + str(ride["ID"]) + ".json", 'r') as file:
                 api_call_results = json.load(file)
                 text = "".join(line for line in file)
-                if "DRIVING" in text:
-                    print("\n\n\n PROBLEM \n\n\n")
 
             #these skip archived results that do not provide public transit direction
-            if api_call_results["status"] == "ZERO_RESULTS": #this occurs when google could not find a reasonable connecting route
+            if api_call_results["status"] == "ZERO_RESULTS": #this occurs when Google could not find a reasonable connecting route
                 continue
             if not check_transit_mode(api_call_results):  # ensures no driving directions were given
                 continue
-
 
             duration = api_call_results["routes"][0]["legs"][0]["duration"]["text"]
             ride["Transit Duration"] = duration
@@ -291,26 +282,32 @@ def test(ride_data):
     archive_api_call_results(request_json, "test")
 
 
-def json_load_test():
-    with open("test.json", 'r') as file:
+def load_json_by_id(ride_id: int) -> dict:
+    path = getcwd() + f"\\archive\\{ride_id}.json"
+    with open(path, 'r') as file:
         api_call_results = json.load(file)
-    print(api_call_results["routes"][0]["legs"][0]["duration"])
+    return api_call_results
+
+
+def construct_api_call_for_id(ride_id: int) -> str:
+    """Creates the html address used to make the call for a specific ride."""
+    api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    all_rides = retrieve_rides(RIDES_FILE_NAME)
+    api_call_html = construct_request(all_rides[ride_id], api_key)
+    return api_call_html
 
 
 if __name__ == "__main__":
-    #test(EPP_EXAMPLE)
-    #json_load_test()
-
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
 
     all_rides= retrieve_rides(RIDES_FILE_NAME)
-    if NEW_DATA:
-        execute_all_api_calls(all_rides, api_key)
-
-    all_rides = add_transit_durations(all_rides)
-
-    transit_duration_df = pool_data(all_rides)
-    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
-    transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Transit_Duration_Start_Coords Decouple Test.csv")
-    transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
+    # if NEW_DATA:
+    #     execute_all_api_calls(all_rides, api_key)
+    #
+    # all_rides = add_transit_durations(all_rides)
+    #
+    # transit_duration_df = pool_data(all_rides)
+    # transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
+    # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
+    # transit_start_df.to_csv("Transit_Duration_Start_Coords Decouple Test.csv")
+    # transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
