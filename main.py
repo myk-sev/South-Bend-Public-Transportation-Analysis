@@ -162,7 +162,7 @@ def add_transit_durations(rides) -> list:
             #these skip archived results that do not provide public transit direction
             if api_call_results["status"] == "ZERO_RESULTS": #this occurs when Google could not find a reasonable connecting route
                 continue
-            if not check_transit_mode(api_call_results):  # ensures no driving directions were given
+            if "DRIVING" in get_travel_modes(api_call_results):  # ensures no driving directions were given
                 continue
 
             duration = api_call_results["routes"][0]["legs"][0]["duration"]["text"]
@@ -171,12 +171,12 @@ def add_transit_durations(rides) -> list:
     return rides
 
 
-def check_transit_mode(request_json):
-    """Checks the direction type given by api call."""
-    for step in request_json["routes"][0]["legs"][0]["steps"]:
-        if step["travel_mode"] == "DRIVING":
-            return False
-    return True
+def get_travel_modes(request_json):
+    """Determines all travel modes used for a specific route."""
+    directions = request_json["routes"][0]["legs"][0]["steps"]
+    travel_modes = {step["travel_mode"] for step in directions}
+
+    return travel_modes
 
 
 def calculate_epoch_time(date_str, time_str)->int:
