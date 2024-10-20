@@ -153,11 +153,15 @@ def add_transit_durations(rides) -> list:
             #these skip archived results that do not provide public transit direction
             if api_call_results["status"] == "ZERO_RESULTS": #this occurs when Google could not find a reasonable connecting route
                 continue
-            if "DRIVING" in get_travel_modes(api_call_results):  # ensures no driving directions were given
+
+            travel_modes = get_travel_modes(api_call_results)
+            if "DRIVING" in travel_modes:  # ensures no driving directions were given
+                print("Driving route detected: " + str(ride["ID"]))
                 continue
 
             duration = api_call_results["routes"][0]["legs"][0]["duration"]["text"]
             ride["Transit Duration"] = duration
+            ride["Travel Mode"] = travel_modes
 
     return rides
 
@@ -314,19 +318,15 @@ def generate_mode_counts() -> dict:
 
 
 if __name__ == "__main__":
-    travel_counts = generate_mode_counts()
-    for modes in travel_counts:
-        print(f"{modes}: {travel_counts[modes]}")
+    api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    all_rides= retrieve_rides(RIDES_FILE_NAME)
 
-    # api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    # all_rides= retrieve_rides(RIDES_FILE_NAME)
+    if NEW_DATA:
+        execute_all_api_calls(all_rides, api_key)
 
-    # if NEW_DATA:
-    #     execute_all_api_calls(all_rides, api_key)
-    #
-    # all_rides = add_transit_durations(all_rides)
-    #
-    # transit_duration_df = pool_data(all_rides)
+    all_rides = add_transit_durations(all_rides)
+
+    transit_duration_df = pool_data(all_rides)
     # transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
     # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
     # transit_start_df.to_csv("Transit_Duration_Start_Coords Decouple Test.csv")
