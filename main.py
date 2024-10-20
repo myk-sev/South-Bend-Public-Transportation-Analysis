@@ -22,16 +22,6 @@ HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request T
 EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
 ###################
 
-#TO DO October Week 4:
-# Create final data set
-
-#TO DO:
-# Have API call rate check on time pass rather than waiting a set time.
-# Have script check for existence of bad coordinates file. If it is there create a new file.
-# add a time-out function for requests
-# add the functionality to determine what requests still need to be made/have been made
-
-
 def encode_endpoints (start_coords: tuple, end_coords: tuple) -> str :
     """Formats coordinates for inclusion in request url."""
     origin = f"origin={start_coords[0]},{start_coords[1]}"
@@ -153,6 +143,7 @@ def add_transit_durations(rides) -> list:
     for ride in rides:
         if ride["ID"] % 100 == 0:
             print("Ride", ride["ID"], "processed.")
+
         if ride["ID"] in ids:
 
             with open(archive_path+ "\\" + str(ride["ID"]) + ".json", 'r') as file:
@@ -296,11 +287,40 @@ def construct_api_call_for_id(ride_id: int) -> str:
     api_call_html = construct_request(all_rides[ride_id], api_key)
     return api_call_html
 
+def generate_mode_counts() -> dict:
+    """Counts the number of routes utilizing each combination of transportation options."""
+    archive_path = getcwd() + "\\archive"
+    file_names = listdir(archive_path)
+    ids = [int(file_name.removesuffix(".json")) for file_name in file_names]
+
+    travel_counts = {}
+    for id_ in ids:
+        api_call_results = load_json_by_id(id_)
+
+        # these skip archived results that do not provide public transit direction
+        if api_call_results[
+            "status"] == "ZERO_RESULTS":  # this occurs when Google could not find a reasonable connecting route
+            continue
+        if "DRIVING" in get_travel_modes(api_call_results):  # ensures no driving directions were given
+            continue
+
+        travel_modes = tuple(get_travel_modes(api_call_results))
+        if not travel_modes in travel_counts:
+            travel_counts[travel_modes] = 1
+        else:
+            travel_counts[travel_modes] += 1
+
+    return travel_counts
+
 
 if __name__ == "__main__":
-    api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    travel_counts = generate_mode_counts()
+    for modes in travel_counts:
+        print(f"{modes}: {travel_counts[modes]}")
 
-    all_rides= retrieve_rides(RIDES_FILE_NAME)
+    # api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    # all_rides= retrieve_rides(RIDES_FILE_NAME)
+
     # if NEW_DATA:
     #     execute_all_api_calls(all_rides, api_key)
     #
