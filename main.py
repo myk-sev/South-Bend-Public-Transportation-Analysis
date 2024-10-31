@@ -117,7 +117,7 @@ def execute_all_api_calls(all_rides, api_key):
             archive_api_call_results(request_json, ride["ID"])
 
             try:
-                if check_transit_mode(request_json): #ensures no driving directions were given
+                if "DRIVING" in get_travel_modes(request_json): #ensures no driving directions were given
                     duration = request_json["routes"][0]["legs"][0]["duration"]["text"]
                     print(str(ride["ID"]) + ":", duration)
 
@@ -159,7 +159,14 @@ def add_transit_durations(rides) -> list:
                 print("Driving route detected: " + str(ride["ID"]))
                 continue
 
-            duration = api_call_results["routes"][0]["legs"][0]["duration"]["text"]
+            if "TRANSIT" in travel_modes: #public transit directions
+                arrival_time = api_call_results["routes"][0]["legs"][0]["arrival_time"]["value"]
+                request_time = ride["Request Time"]
+                duration = (arrival_time - request_time) / 60
+
+            else: #walking directions
+                duration = api_call_results["routes"][0]["legs"][0]["duration"]["value"] / 60
+
             ride["Transit Duration"] = duration
             ride["Travel Mode"] = travel_modes
 
@@ -327,7 +334,7 @@ if __name__ == "__main__":
     all_rides = add_transit_durations(all_rides)
 
     transit_duration_df = pool_data(all_rides)
-    # transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
+    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
     # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    # transit_start_df.to_csv("Transit_Duration_Start_Coords Decouple Test.csv")
+    transit_start_df.to_csv("Transit_Duration_Start_Coords_All_Inclusive_Times.csv")
     # transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
