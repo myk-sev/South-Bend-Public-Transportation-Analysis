@@ -7,7 +7,7 @@ from os import getcwd, mkdir, listdir
 from os.path import isdir
 
 PROGRESS_FILE_NAME = "temp_transit_duration.csv"
-RIDES_FILE_NAME = "EPP_Uber_Rides_2024.csv"
+RIDES_FILE_PATH = "Data\\EPP_Uber_Rides_2024.csv"
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
 API_CALL_RATE = 25 #per second
@@ -162,10 +162,10 @@ def add_transit_durations(rides) -> list:
             if "TRANSIT" in travel_modes: #public transit directions
                 arrival_time = api_call_results["routes"][0]["legs"][0]["arrival_time"]["value"]
                 request_time = ride["Request Time"]
-                duration = (arrival_time - request_time) / 60
+                duration = int((arrival_time - request_time) / 60)
 
             else: #walking directions
-                duration = api_call_results["routes"][0]["legs"][0]["duration"]["value"] / 60
+                duration = int(api_call_results["routes"][0]["legs"][0]["duration"]["value"] / 60)
 
             ride["Transit Duration"] = duration
             ride["Travel Mode"] = travel_modes
@@ -294,7 +294,7 @@ def load_json_by_id(ride_id: int) -> dict:
 def construct_api_call_for_id(ride_id: int) -> str:
     """Creates the html address used to make the call for a specific ride."""
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    all_rides = retrieve_rides(RIDES_FILE_NAME)
+    all_rides = retrieve_rides(RIDES_FILE_PATH)
     api_call_html = construct_request(all_rides[ride_id], api_key)
     return api_call_html
 
@@ -323,10 +323,9 @@ def generate_mode_counts() -> dict:
 
     return travel_counts
 
-
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    all_rides= retrieve_rides(RIDES_FILE_NAME)
+    all_rides= retrieve_rides(RIDES_FILE_PATH)
 
     if NEW_DATA:
         execute_all_api_calls(all_rides, api_key)
