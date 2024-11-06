@@ -54,13 +54,12 @@ def retrieve_rides(filename: str) -> list:
         end_long = rides_df.iloc[i]["Drop Off Longitude"]
         id_ = rides_df.iloc[i]["ID"]
 
-        request_date = rides_df.iloc[i]["Request Date"]
-        request_time = rides_df.iloc[i]["Request Time"]
+        request_date = clean_date_data(rides_df.iloc[i]["Request Date"])
+        request_time = clean_time_data(rides_df.iloc[i]["Request Time"])
 
         source_epoch_time = calculate_epoch_time(request_date, request_time)
         target_week_epoch = calculate_epoch_time(TARGET_WEEK, "5:00 PM") # time_str here is not used. Only provided to fulfill argument requirements.
         epoch_time = massage_time(source_epoch_time, target_week_epoch)
-        
 
         route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": epoch_time}
         all_routes.append(route_data)
@@ -181,20 +180,32 @@ def get_travel_modes(request_json):
     return travel_modes
 
 
-def calculate_epoch_time(date_str, time_str)->int:
-    """Determines seconds since start of epoch based on local time entry."""
-    # convert date info into struct_time object
+def clean_date_data(date_str: str) -> str:
+    """Formats data to be compatible with formatting options available to python's time library."""
     split_date = date_str.split('/')
     for i in range(len(split_date)):
         if len(split_date[i]) == 1:
             split_date[i] = '0' + split_date[i] #formatting requires double-digit entries for days & months
     fixed_date = '/'.join(split_date)
+
+    return fixed_date
+
+
+def clean_time_data(time_str: str) -> str:
+    """Formats data to be compatible with formatting options available to python's time library."""
+    if len(time_str) == 7:
+        time_str = '0' + time_str #double-digit formatting is required for minutes and hours
+
+    return time_str
+
+
+def calculate_epoch_time(date_str, time_str)->int:
+    """Determines seconds since start of epoch based on local time entry."""
+    # convert date info into struct_time object
     date_format = "%m/%d/%Y"
-    date_struct = time.strptime(fixed_date, date_format)  # documentation https://docs.python.org/3.12/library/datetime.html#strftime-and-strptime-behavior
+    date_struct = time.strptime(date_str, date_format)  # documentation https://docs.python.org/3.12/library/datetime.html#strftime-and-strptime-behavior
 
     # convert time info into struct_time object
-    if len(time_str) == 7:
-        time_str = '0' + time_str #double-digit formatting is also required for minutes and hours
     time_format = "%I:%M %p"
     time_struct = time.strptime(time_str, time_format)
 
@@ -327,6 +338,8 @@ if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
     all_rides= retrieve_rides(RIDES_FILE_PATH)
 
+
+
     if NEW_DATA:
         execute_all_api_calls(all_rides, api_key)
 
@@ -335,5 +348,5 @@ if __name__ == "__main__":
     transit_duration_df = pool_data(all_rides)
     transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
     # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Transit_Duration_Start_Coords_All_Inclusive_Times.csv")
+    transit_start_df.to_csv("test.csv")
     # transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
