@@ -15,7 +15,7 @@ NEW_DATA = False #set this to true if this script is being executed on a data se
 
 DATA_TZ = -5 #offset relative to UTC in hours
 LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
-TARGET_WEEK = "11/06/2024"
+TARGET_WEEK = "12/06/2024"
 
 ### Test Routes ###
 HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
@@ -57,11 +57,9 @@ def retrieve_rides(filename: str) -> list:
         request_date = clean_date_data(rides_df.iloc[i]["Request Date"])
         request_time = clean_time_data(rides_df.iloc[i]["Request Time"])
 
-        source_epoch_time = calculate_epoch_time(request_date, request_time)
-        target_week_epoch = calculate_epoch_time(TARGET_WEEK, "5:00 PM") # time_str here is not used. Only provided to fulfill argument requirements.
-        epoch_time = massage_time(source_epoch_time, target_week_epoch)
+        unix_time = calculate_epoch_time(request_date, request_time)
 
-        route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": epoch_time}
+        route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": unix_time}
         all_routes.append(route_data)
 
     return all_routes
@@ -336,9 +334,13 @@ def generate_mode_counts() -> dict:
 
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
+
     all_rides= retrieve_rides(RIDES_FILE_PATH)
-
-
+    for ride in all_rides:
+        original_unix_time = ride["Request Time"]
+        target_unix_time = calculate_epoch_time(TARGET_WEEK, "5:00 PM")  # time_str here is not used. Only provided to fulfill argument requirements.
+        in_zone_time = massage_time(original_unix_time, target_unix_time)
+        ride["Request Time"] = in_zone_time
 
     if NEW_DATA:
         execute_all_api_calls(all_rides, api_key)
