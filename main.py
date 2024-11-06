@@ -169,6 +169,18 @@ def add_transit_durations(rides) -> list:
 
     return rides
 
+def retrieve_transit_durations(api_call_results, travel_modes) -> int:
+    """Opens archived API call to retrieves transit duration."""
+    if "TRANSIT" in travel_modes: #public transit directions
+        arrival_time = api_call_results["routes"][0]["legs"][0]["arrival_time"]["value"]
+        request_time = ride["Request Time"]
+        duration = int((arrival_time - request_time) / 60)
+
+    else: #walking directions
+        duration = int(api_call_results["routes"][0]["legs"][0]["duration"]["value"] / 60)
+
+    return duration
+
 
 def get_travel_modes(request_json):
     """Determines all travel modes used for a specific route."""
@@ -335,6 +347,7 @@ def generate_mode_counts() -> dict:
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
 
+    #retrieve data from file
     all_rides= retrieve_rides(RIDES_FILE_PATH)
     for ride in all_rides:
         original_unix_time = ride["Request Time"]
@@ -342,11 +355,35 @@ if __name__ == "__main__":
         in_zone_time = massage_time(original_unix_time, target_unix_time)
         ride["Request Time"] = in_zone_time
 
+    #construct and execute API calls
     if NEW_DATA:
         execute_all_api_calls(all_rides, api_key)
 
-    all_rides = add_transit_durations(all_rides)
+    #process api call data
+    archive_path = getcwd() + "\\archive"
+    file_names = listdir(archive_path)
+    ids = [int(file_name.removesuffix(".json")) for file_name in file_names]
 
+    for ride in all_rides:
+        if ride["ID"] % 100 == 0:
+            print("Ride", ride["ID"], "processed.")
+
+        if ride["ID"] in ids:
+            api_call_results = load_json_by_id(ride["ID"])
+            # these skip archived results that do not provide public transit direction
+            if api_call_results["status"] == "ZERO_RESULTS":  # this occurs when Google could not find a reasonable connecting route
+                continue
+
+            travel_modes = get_travel_modes(api_call_results)
+            if "DRIVING" in travel_modes:  # ensures no driving directions were given
+                print("Driving route detected: " + str(ride["ID"]))
+                continue
+
+            duration = retrieve_transit_durations(api_call_results, travel_modes)
+            ride["Transit Duration"] = duration
+            ride["Travel Mode"] = travel_modes
+
+    #construction & recording of final dataset
     transit_duration_df = pool_data(all_rides)
     transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
     # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
