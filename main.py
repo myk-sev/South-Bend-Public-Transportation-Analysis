@@ -344,6 +344,14 @@ def generate_mode_counts() -> dict:
 
     return travel_counts
 
+def military_time_from_unix(unix_time:int) -> str:
+    """Turns unix time back into a human-readable time, while accounting for timezone changes."""
+    time_struct = time.localtime(unix_time)
+    hour = time_struct.tm_hour + (DATA_TZ - LOCAL_TZ)
+    min = time_struct.tm_min
+    military_time = str(hour) + ":" + str(min)
+    return military_time
+
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
 
@@ -379,7 +387,9 @@ if __name__ == "__main__":
                 print("Driving route detected: " + str(ride["ID"]))
                 continue
 
+
             duration = retrieve_transit_durations(api_call_results, travel_modes)
+            ride["Hour"] = time.localtime(ride["Request Time"]).tm_hour + (DATA_TZ - LOCAL_TZ)
             ride["Transit Duration"] = duration
             ride["Travel Mode"] = travel_modes
 
@@ -387,5 +397,5 @@ if __name__ == "__main__":
     transit_duration_df = pool_data(all_rides)
     transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
     # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("test.csv")
+    transit_start_df.to_csv("Public Transit Duration With Hour of Day.csv")
     # transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
