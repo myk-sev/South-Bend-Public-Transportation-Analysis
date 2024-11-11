@@ -11,11 +11,11 @@ RIDES_FILE_PATH = "Data\\EPP_Uber_Rides_2024.csv"
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
 API_CALL_RATE = 25 #per second
-NEW_DATA = False #set this to true if this script is being executed on a data set for the first time
+NEW_DATA = True #set this to true if this script is being executed on a data set for the first time
 
 DATA_TZ = -5 #offset relative to UTC in hours
 LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
-TARGET_WEEK = "12/06/2024"
+TARGET_WEEK = "12/11/2024"
 
 ### Test Routes ###
 HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
@@ -43,26 +43,38 @@ def construct_request(ride_data: dict, api_key: str) -> str:
     return request_url
 
 
-def retrieve_rides(filename: str) -> list:
-    """Retrieve all start & end coordinates from EPP data file."""
-    rides_df = pd.read_csv(filename)
-    all_routes = []
-    for i in range(rides_df.shape[0]):
-        start_lat = rides_df.iloc[i]["Pickup Latitude"]
-        start_long = rides_df.iloc[i]["Pickup Longitude"]
-        end_lat = rides_df.iloc[i]["Drop Off Latitude"]
-        end_long = rides_df.iloc[i]["Drop Off Longitude"]
-        id_ = rides_df.iloc[i]["ID"]
+# def retrieve_coords(df: pd.core.frame.DataFrame, i:int) -> tuple:
+#     """Retrieve start & end coordinates from EPP data file."""
+#     all_routes = []
+#     for i in range(df.shape[0]):
+#         start_lat = df.iloc[i]["Pickup Latitude"]
+#         start_long = df.iloc[i]["Pickup Longitude"]
+#         end_lat = df.iloc[i]["Drop Off Latitude"]
+#         end_long = df.iloc[i]["Drop Off Longitude"]
+#
+#
+#         route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": unix_time}
+#         all_routes.append(route_data)
+#
+#     return all_routes
 
-        request_date = clean_date_data(rides_df.iloc[i]["Request Date"])
-        request_time = clean_time_data(rides_df.iloc[i]["Request Time"])
+def retrieve_coords(df: pd.core.frame.DataFrame, i:int) -> tuple:
+    """Retrieve start & end coordinates from EPP data file."""
+    start_lat = df.iloc[i]["Pickup Latitude"]
+    start_long = df.iloc[i]["Pickup Longitude"]
+    end_lat = df.iloc[i]["Drop Off Latitude"]
+    end_long = df.iloc[i]["Drop Off Longitude"]
 
-        unix_time = calculate_epoch_time(request_date, request_time)
+    route_data = ((start_lat, start_long), (end_lat,end_long))
+    return route_data
 
-        route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": unix_time}
-        all_routes.append(route_data)
 
-    return all_routes
+def retrieve_request_time(df: pd.core.frame.DataFrame, i:int) -> int:
+    """Construct unix time from time recording in main data file."""
+    request_date = clean_date_data(df.iloc[i]["Request Date"])
+    request_time = clean_time_data(df.iloc[i]["Request Time"])
+    unix_time = calculate_epoch_time(request_date, request_time)
+    return unix_time
 
 
 def pool_data(rides: list):
@@ -114,7 +126,7 @@ def execute_all_api_calls(all_rides, api_key):
             archive_api_call_results(request_json, ride["ID"])
 
             try:
-                if "DRIVING" in get_travel_modes(request_json): #ensures no driving directions were given
+                if "DRIVING" not in get_travel_modes(request_json): #ensures no driving directions were given
                     duration = request_json["routes"][0]["legs"][0]["duration"]["text"]
                     print(str(ride["ID"]) + ":", duration)
 
@@ -196,6 +208,7 @@ def clean_date_data(date_str: str) -> str:
     for i in range(len(split_date)):
         if len(split_date[i]) == 1:
             split_date[i] = '0' + split_date[i] #formatting requires double-digit entries for days & months
+
     fixed_date = '/'.join(split_date)
 
     return fixed_date
@@ -315,9 +328,12 @@ def load_json_by_id(ride_id: int) -> dict:
 def construct_api_call_for_id(ride_id: int) -> str:
     """Creates the html address used to make the call for a specific ride."""
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    all_rides = retrieve_rides(RIDES_FILE_PATH)
-    api_call_html = construct_request(all_rides[ride_id], api_key)
+    ride_data = {}
+    ride_data["Start"], ride_data["End"] = retrieve_coords(eppDF, ride_id)
+    ride_data["Request Time"] = retrieve_request_time(eppDF, ride_id)
+    api_call_html = construct_request(ride_data, api_key)
     return api_call_html
+
 
 def generate_mode_counts() -> dict:
     """Counts the number of routes utilizing each combination of transportation options."""
@@ -344,6 +360,7 @@ def generate_mode_counts() -> dict:
 
     return travel_counts
 
+
 def military_time_from_unix(unix_time:int) -> str:
     """Turns unix time back into a human-readable time, while accounting for timezone changes."""
     time_struct = time.localtime(unix_time)
@@ -352,12 +369,22 @@ def military_time_from_unix(unix_time:int) -> str:
     military_time = str(hour) + ":" + str(min)
     return military_time
 
+
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
+    eppDF = pd.read_csv(RIDES_FILE_PATH)
 
     #retrieve data from file
-    all_rides= retrieve_rides(RIDES_FILE_PATH)
-    for ride in all_rides:
+    data = []
+    for i in range(eppDF.shape[0]): #loops through all rows in source data
+        ride = {}
+        ride["ID"] = i
+        ride["Start"], ride["End"] = retrieve_coords(eppDF, i)
+        ride["Request Time"] = retrieve_request_time(eppDF, i)
+        data.append(ride)
+
+    #moves historic times into the window of API calculation
+    for ride in data:
         original_unix_time = ride["Request Time"]
         target_unix_time = calculate_epoch_time(TARGET_WEEK, "5:00 PM")  # time_str here is not used. Only provided to fulfill argument requirements.
         in_zone_time = massage_time(original_unix_time, target_unix_time)
@@ -365,14 +392,14 @@ if __name__ == "__main__":
 
     #construct and execute API calls
     if NEW_DATA:
-        execute_all_api_calls(all_rides, api_key)
+        execute_all_api_calls(data, api_key)
 
     #process api call data
     archive_path = getcwd() + "\\archive"
     file_names = listdir(archive_path)
     ids = [int(file_name.removesuffix(".json")) for file_name in file_names]
 
-    for ride in all_rides:
+    for ride in data:
         if ride["ID"] % 100 == 0:
             print("Ride", ride["ID"], "processed.")
 
@@ -389,13 +416,23 @@ if __name__ == "__main__":
 
 
             duration = retrieve_transit_durations(api_call_results, travel_modes)
-            ride["Hour"] = time.localtime(ride["Request Time"]).tm_hour + (DATA_TZ - LOCAL_TZ)
+            #ride["Hour"] = time.localtime(ride["Request Time"]).tm_hour + (DATA_TZ - LOCAL_TZ)
             ride["Transit Duration"] = duration
             ride["Travel Mode"] = travel_modes
 
     #construction & recording of final dataset
-    transit_duration_df = pool_data(all_rides)
+    transit_duration_df = pool_data(data)
+
+    #temporary time
+    hour_column = []
+    for ride in data:
+        if "Transit Duration" in ride:
+            hour = int(military_time_from_unix(ride["Request Time"]).split(":")[0])
+            hour_column.append(hour)
+    transit_duration_df["Hour"] = hour_column
+
+    #transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour"]]
     transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
-    # transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Public Transit Duration With Hour of Day.csv")
+    #transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
+    transit_start_df.to_csv("Public Transit Duration.csv")
     # transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
