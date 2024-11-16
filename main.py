@@ -6,7 +6,7 @@ import json
 from os import getcwd, mkdir, listdir
 from os.path import isdir
 
-PROGRESS_FILE_NAME = "temp_transit_duration.csv"
+OUTPUT_FILE_NAME = "test.csv"
 RIDES_FILE_PATH = "Data\\EPP_Uber_Rides_2024.csv"
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
@@ -288,10 +288,6 @@ def archive_api_call_results(result_json: dict, route_id: int):
         file.write(serialized_json)
 
 
-def create_error_record():
-    pass
-
-
 def test(ride_data):
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
     request_url = construct_request(ride_data, api_key)
@@ -350,9 +346,9 @@ def generate_mode_counts() -> dict:
 def military_time_from_unix(unix_time:int) -> str:
     """Turns unix time back into a human-readable time, while accounting for timezone changes."""
     time_struct = time.localtime(unix_time)
-    hour = time_struct.tm_hour + (DATA_TZ - LOCAL_TZ)
-    min = time_struct.tm_min
-    military_time = str(hour) + ":" + str(min)
+    time_hour = time_struct.tm_hour + (DATA_TZ - LOCAL_TZ)
+    time_min = time_struct.tm_min
+    military_time = str(time_hour) + ":" + str(time_min)
     return military_time
 
 
@@ -431,5 +427,5 @@ if __name__ == "__main__":
 
     transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Duration Ratio"]]
     #transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Duration Ratio Data.csv")
-    # transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
+    transit_start_df.to_csv(OUTPUT_FILE_NAME)
+    # transit_end_df.to_csv(OUTPUT_FILE_NAME + " end coordinates.csv")
