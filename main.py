@@ -10,8 +10,9 @@ PROGRESS_FILE_NAME = "temp_transit_duration.csv"
 RIDES_FILE_PATH = "Data\\EPP_Uber_Rides_2024.csv"
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
+ARCHIVE_DIR = "new_archive"
 API_CALL_RATE = 25 #per second
-NEW_DATA = True #set this to true if this script is being executed on a data set for the first time
+NEW_DATA = False #set this to true if this script is being executed on a data set for the first time
 
 DATA_TZ = -5 #offset relative to UTC in hours
 LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
@@ -42,21 +43,6 @@ def construct_request(ride_data: dict, api_key: str) -> str:
 
     return request_url
 
-
-# def retrieve_coords(df: pd.core.frame.DataFrame, i:int) -> tuple:
-#     """Retrieve start & end coordinates from EPP data file."""
-#     all_routes = []
-#     for i in range(df.shape[0]):
-#         start_lat = df.iloc[i]["Pickup Latitude"]
-#         start_long = df.iloc[i]["Pickup Longitude"]
-#         end_lat = df.iloc[i]["Drop Off Latitude"]
-#         end_long = df.iloc[i]["Drop Off Longitude"]
-#
-#
-#         route_data = {"Start": (start_lat, start_long), "End": (end_lat,end_long), "ID": id_, "Request Time": unix_time}
-#         all_routes.append(route_data)
-#
-#     return all_routes
 
 def retrieve_coords(df: pd.core.frame.DataFrame, i:int) -> tuple:
     """Retrieve start & end coordinates from EPP data file."""
@@ -293,7 +279,7 @@ def retrieve_api_key(file_name: str) -> str:
 
 def archive_api_call_results(result_json: dict, route_id: int):
     """Archives results of api calls for future reference."""
-    path = getcwd() + "\\archive"
+    path = getcwd() + "\\" + ARCHIVE_DIR
     if not isdir(path): # check for existence of archive folder, if it does not exist create it
         mkdir(path)
 
@@ -406,10 +392,14 @@ if __name__ == "__main__":
         if ride["ID"] in ids:
             api_call_results = load_json_by_id(ride["ID"])
             # these skip archived results that do not provide public transit direction
-            if api_call_results["status"] == "ZERO_RESULTS":  # this occurs when Google could not find a reasonable connecting route
+            if api_call_results["status"] in ["ZERO_RESULTS", "UNKNOWN_ERROR"]:  # this occurs when Google could not find a reasonable connecting route
                 continue
 
-            travel_modes = get_travel_modes(api_call_results)
+            try:
+                travel_modes = get_travel_modes(api_call_results)
+            except:
+                print("ID:", ride["ID"])
+                raise
             if "DRIVING" in travel_modes:  # ensures no driving directions were given
                 print("Driving route detected: " + str(ride["ID"]))
                 continue
@@ -431,8 +421,15 @@ if __name__ == "__main__":
             hour_column.append(hour)
     transit_duration_df["Hour"] = hour_column
 
-    #transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour"]]
-    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration"]]
+    #epp to public transit ratio
+    eppDurations = eppDF[["ID", "Total Time (min)"]]
+    publicTransitDurations = transit_duration_df[["ID", "Transit Duration"]]
+    mergedDF = pd.merge(eppDurations, publicTransitDurations, on="ID")
+    mergedDF["Ratio"] = mergedDF["Transit Duration"] / mergedDF["Total Time (min)"]
+    transit_duration_df["Duration Ratio"] = mergedDF["Ratio"]
+
+
+    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Duration Ratio"]]
     #transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv("Public Transit Duration.csv")
+    transit_start_df.to_csv("Duration Ratio Data.csv")
     # transit_end_df.to_csv("Transit_Duration_End_Coords Decouple Test.csv")
