@@ -6,7 +6,7 @@ import json
 from os import getcwd, mkdir, listdir
 from os.path import isdir
 
-OUTPUT_FILE_NAME = "test.csv"
+OUTPUT_FILE_NAME = "Time Splits - "
 RIDES_FILE_PATH = "Data\\EPP_Uber_Rides_2024.csv"
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
@@ -355,15 +355,20 @@ def extract_travel_by_mode(route_id):
     """Sums time and distance per travel mode in each route."""
     api_call_results = load_json_by_id(route_id)
     segments = api_call_results["routes"][0]["legs"][0]["steps"] #zone in on portion of json holding related info
-    data = {travel_mode: {"distance": 0, "time":0} for travel_mode in get_travel_modes(api_call_results)} #create base structure for holding data
+    data = {travel_mode: {"DISTANCE": 0, "TIME":0} for travel_mode in get_travel_modes(api_call_results)} #create base structure for holding data
 
     for segment in segments:
         travel_mode = segment["travel_mode"]
         distance = segment["distance"]["value"]
         travel_time = segment["duration"]["value"]
 
-        data[travel_mode]["distance"] += distance / 1609.34 #meters in a mile
-        data[travel_mode]["time"] += travel_time / 60 #seconds to minutes
+        data[travel_mode]["DISTANCE"] += distance
+        data[travel_mode]["TIME"] += travel_time
+
+    #data clean up and unit conversion
+    for travel_mode in data:
+        data[travel_mode]["DISTANCE"] = data[travel_mode]["DISTANCE"] / 1609.34  #meters to miles
+        data[travel_mode]["TIME"] = int(data[travel_mode]["TIME"] / 60 ) #seconds to minutes
 
     return data
 
@@ -442,8 +447,26 @@ if __name__ == "__main__":
     mergedDF["Ratio"] = mergedDF["Transit Duration"] / mergedDF["Total Time (min)"]
     transit_duration_df["Duration Ratio"] = mergedDF["Ratio"]
 
+    #time splits
+    walking_times = [extract_travel_by_mode(int(route["ID"]))["WALKING"]["TIME"] for i, route in transit_duration_df.iterrows()]
+    transit_duration_df["Time Spent - Walking"] = walking_times
 
-    transit_start_df = transit_duration_df[["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Duration Ratio"]]
-    #transit_end_df = transit_duration_df[["ID", "Drop Off Latitude", "Drop Off Longitude", "Transit Duration"]]
-    transit_start_df.to_csv(OUTPUT_FILE_NAME)
-    # transit_end_df.to_csv(OUTPUT_FILE_NAME + " end coordinates.csv")
+    bus_times = []
+    for i, route in transit_duration_df.iterrows():
+        time_split = extract_travel_by_mode(int(route["ID"]))
+        if "TRANSIT" in time_split:
+            bus_times.append(time_split["TRANSIT"]["TIME"])
+        else:
+            bus_times.append(0)
+    transit_duration_df["Time Spent - Bus"] = bus_times
+
+    transit_duration_df["Time Spent - Waiting"] = transit_duration_df["Transit Duration"] - (transit_duration_df["Time Spent - Bus"] + transit_duration_df["Time Spent - Walking"])
+
+    #file creation
+    walkingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Walking"]]
+    busTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus"]]
+    waitingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Waiting"]]
+
+    walkingTimesDF.to_csv(OUTPUT_FILE_NAME + "Walking.csv")
+    busTimesDF.to_csv(OUTPUT_FILE_NAME + "Public Transit.csv")
+    waitingTimesDF.to_csv(OUTPUT_FILE_NAME + "Waiting.csv")
