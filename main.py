@@ -351,6 +351,24 @@ def military_time_from_unix(unix_time:int) -> str:
     military_time = str(time_hour) + ":" + str(time_min)
     return military_time
 
+def extract_travel_by_mode(route_id):
+    """Sums time and distance per travel mode in each route."""
+    api_call_results = load_json_by_id(route_id)
+    segments = api_call_results["routes"][0]["legs"][0]["steps"] #zone in on portion of json holding related info
+    data = {travel_mode: {"distance": 0, "time":0} for travel_mode in get_travel_modes(api_call_results)} #create base structure for holding data
+
+    for segment in segments:
+        travel_mode = segment["travel_mode"]
+        distance = segment["distance"]["value"]
+        travel_time = segment["duration"]["value"]
+
+        data[travel_mode]["distance"] += distance / 1609.34 #meters in a mile
+        data[travel_mode]["time"] += travel_time / 60 #seconds to minutes
+
+    return data
+
+
+
 
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
