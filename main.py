@@ -1,3 +1,5 @@
+from idlelib.pyparse import trans
+
 import requests
 import pandas as pd
 import time
@@ -5,6 +7,8 @@ import datetime
 import json
 from os import getcwd, mkdir, listdir
 from os.path import isdir
+
+from numpy.ma.extras import average
 
 OUTPUT_FILE_NAME = "Time Splits - "
 RIDES_FILE_PATH = "Data\\EPP_Uber_Rides_2024.csv"
@@ -222,12 +226,14 @@ def calculate_epoch_time(date_str, time_str)->int:
     input_tuple = (date_struct.tm_year, #year
                    date_struct.tm_mon, #month
                    date_struct.tm_mday, #day
-                   time_struct.tm_hour + (LOCAL_TZ - DATA_TZ), #hour
+                   time_struct.tm_hour + (LOCAL_TZ - DATA_TZ) if time_struct.tm_hour + (LOCAL_TZ - DATA_TZ) < 24 else 0, #hour
                    time_struct.tm_min, #minute
                    time_struct.tm_sec, #second
                    date_struct.tm_wday, #day of week
                    date_struct.tm_yday, #day of year
                    date_struct.tm_isdst) #daylight savings flag
+
+    if( input_tuple.
 
     combined_struct = time.struct_time(input_tuple)
     epoch_time = time.mktime(combined_struct) #convert struct_time object into num of seconds since 1970
@@ -346,7 +352,7 @@ def generate_mode_counts() -> dict:
 def military_time_from_unix(unix_time:int) -> str:
     """Turns unix time back into a human-readable time, while accounting for timezone changes."""
     time_struct = time.localtime(unix_time)
-    time_hour = time_struct.tm_hour + (DATA_TZ - LOCAL_TZ)
+    time_hour = time_struct.tm_hour + (DATA_TZ - LOCAL_TZ) if time_struct.tm_hour + (DATA_TZ - LOCAL_TZ) < 24 else 0
     time_min = time_struct.tm_min
     military_time = str(time_hour) + ":" + str(time_min)
     return military_time
@@ -425,7 +431,6 @@ if __name__ == "__main__":
 
 
             duration = retrieve_transit_durations(api_call_results, travel_modes)
-            #ride["Hour"] = time.localtime(ride["Request Time"]).tm_hour + (DATA_TZ - LOCAL_TZ)
             ride["Transit Duration"] = duration
             ride["Travel Mode"] = travel_modes
 
@@ -466,7 +471,16 @@ if __name__ == "__main__":
     walkingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Walking"]]
     busTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus"]]
     waitingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Waiting"]]
+    allTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus", "Time Spent - Walking", "Time Spent - Waiting"]]
 
-    walkingTimesDF.to_csv(OUTPUT_FILE_NAME + "Walking.csv")
-    busTimesDF.to_csv(OUTPUT_FILE_NAME + "Public Transit.csv")
-    waitingTimesDF.to_csv(OUTPUT_FILE_NAME + "Waiting.csv")
+    # walkingTimesDF.to_csv(OUTPUT_FILE_NAME + "Walking.csv")
+    # busTimesDF.to_csv(OUTPUT_FILE_NAME + "Public Transit.csv")
+    # waitingTimesDF.to_csv(OUTPUT_FILE_NAME + "Waiting.csv")
+    allTimesDF.to_csv(OUTPUT_FILE_NAME + "All.csv")
+
+    print("Average Time Spent Waiting:", transit_duration_df["Time Spent - Waiting"].mean())
+    print("Average Time Spent On Bus:", transit_duration_df["Time Spent - Bus"].mean())
+    print("Average Time Spent Walking:", transit_duration_df["Time Spent - Walking"].mean())
+    print()
+    print("Average Time Spent Waiting:", eppDF["Wait Time (min)"].mean())
+    print("Average Time Spent - Ride Share:", eppDF["Ride Duration (min)"].mean())
