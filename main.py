@@ -10,17 +10,17 @@ from os.path import isdir
 
 from numpy.ma.extras import average
 
-OUTPUT_FILE_NAME = "Time Splits - "
-RIDES_FILE_PATH = "Data\\EPP_Uber_Rides_2024.csv"
+OUTPUT_FILE_NAME = "Time Splits - All (2023)"
+RIDES_FILE_PATH = "Data\\EPP_Uber_2023.csv"
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
-ARCHIVE_DIR = "new_archive"
+ARCHIVE_DIR = "2023_archive"
 API_CALL_RATE = 25 #per second
-NEW_DATA = False #set this to true if this script is being executed on a data set for the first time
+NEW_DATA = True #set this to true if this script is being executed on a data set for the first time
 
 DATA_TZ = -5 #offset relative to UTC in hours
 LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
-TARGET_WEEK = "12/11/2024"
+TARGET_WEEK = "2/5/2025"
 
 ### Test Routes ###
 HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
@@ -61,8 +61,8 @@ def retrieve_coords(df: pd.core.frame.DataFrame, i:int) -> tuple:
 
 def retrieve_request_time(df: pd.core.frame.DataFrame, i:int) -> int:
     """Construct unix time from time recording in main data file."""
-    request_date = clean_date_data(df.iloc[i]["Request Date"])
-    request_time = clean_time_data(df.iloc[i]["Request Time"])
+    request_date = clean_date_data(df.iloc[i]["Request Date (Local)"])
+    request_time = clean_time_data(df.iloc[i]["Request Time (Local)"])
     unix_time = calculate_epoch_time(request_date, request_time)
     return unix_time
 
@@ -206,7 +206,7 @@ def clean_date_data(date_str: str) -> str:
 
 def clean_time_data(time_str: str) -> str:
     """Formats data to be compatible with formatting options available to python's time library."""
-    if len(time_str) == 7:
+    if len(time_str) == 6:
         time_str = '0' + time_str #double-digit formatting is required for minutes and hours
 
     return time_str
@@ -219,7 +219,7 @@ def calculate_epoch_time(date_str, time_str)->int:
     date_struct = time.strptime(date_str, date_format)  # documentation https://docs.python.org/3.12/library/datetime.html#strftime-and-strptime-behavior
 
     # convert time info into struct_time object
-    time_format = "%I:%M %p"
+    time_format = "%I:%M%p"
     time_struct = time.strptime(time_str, time_format)
 
     #combined into a single struct_time object
@@ -232,8 +232,6 @@ def calculate_epoch_time(date_str, time_str)->int:
                    date_struct.tm_wday, #day of week
                    date_struct.tm_yday, #day of year
                    date_struct.tm_isdst) #daylight savings flag
-
-    if( input_tuple.
 
     combined_struct = time.struct_time(input_tuple)
     epoch_time = time.mktime(combined_struct) #convert struct_time object into num of seconds since 1970
@@ -253,9 +251,11 @@ def massage_time(source_unix_time:int, target_week_unix:int) -> int:
 
     one_day_delta = datetime.timedelta(days=1) # time delta class used to auto handle changes in days, months, years, ect
 
+
     target_week_datetime = datetime.date.fromtimestamp(target_week_unix) # time class compatible with time delta class
     new_day = target_week_datetime + one_day_delta * (source_day_of_the_week - target_day_of_the_week)
     new_tuple = new_day.timetuple()
+    print(target_week_datetime, source_day_of_the_week, target_day_of_the_week, new_day, new_tuple.tm_mon)
 
     combined_tuple = (new_tuple.tm_year, #year
                       new_tuple.tm_mon,  # month
@@ -318,7 +318,12 @@ def construct_api_call_for_id(ride_id: int) -> str:
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
     ride_data = {}
     ride_data["Start"], ride_data["End"] = retrieve_coords(eppDF, ride_id)
-    ride_data["Request Time"] = retrieve_request_time(eppDF, ride_id)
+
+    original_unix_time = retrieve_request_time(eppDF, ride_id)
+    target_unix_time = calculate_epoch_time(TARGET_WEEK,"5:00PM")  # time_str here is not used. Only provided to fulfill argument requirements.
+    in_zone_time = massage_time(original_unix_time, target_unix_time)
+    ride_data["Request Time"] = in_zone_time
+
     api_call_html = construct_request(ride_data, api_key)
     return api_call_html
 
@@ -347,7 +352,6 @@ def generate_mode_counts() -> dict:
             travel_counts[travel_modes] += 1
 
     return travel_counts
-
 
 def military_time_from_unix(unix_time:int) -> str:
     """Turns unix time back into a human-readable time, while accounting for timezone changes."""
@@ -384,7 +388,7 @@ def extract_travel_by_mode(route_id):
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
     eppDF = pd.read_csv(RIDES_FILE_PATH)
-
+    print(construct_api_call_for_id(0))
     #retrieve data from file
     data = []
     for i in range(eppDF.shape[0]): #loops through all rows in source data
@@ -397,7 +401,7 @@ if __name__ == "__main__":
     #moves historic times into the window of API calculation
     for ride in data:
         original_unix_time = ride["Request Time"]
-        target_unix_time = calculate_epoch_time(TARGET_WEEK, "5:00 PM")  # time_str here is not used. Only provided to fulfill argument requirements.
+        target_unix_time = calculate_epoch_time(TARGET_WEEK, "5:00PM")  # time_str here is not used. Only provided to fulfill argument requirements.
         in_zone_time = massage_time(original_unix_time, target_unix_time)
         ride["Request Time"] = in_zone_time
 
@@ -468,19 +472,21 @@ if __name__ == "__main__":
     transit_duration_df["Time Spent - Waiting"] = transit_duration_df["Transit Duration"] - (transit_duration_df["Time Spent - Bus"] + transit_duration_df["Time Spent - Walking"])
 
     #file creation
-    walkingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Walking"]]
-    busTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus"]]
-    waitingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Waiting"]]
+    # walkingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Walking"]]
+    # busTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus"]]
+    # waitingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Waiting"]]
     allTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus", "Time Spent - Walking", "Time Spent - Waiting"]]
+    byHour = allTimesDF.groupby("Hour")
 
     # walkingTimesDF.to_csv(OUTPUT_FILE_NAME + "Walking.csv")
     # busTimesDF.to_csv(OUTPUT_FILE_NAME + "Public Transit.csv")
     # waitingTimesDF.to_csv(OUTPUT_FILE_NAME + "Waiting.csv")
-    allTimesDF.to_csv(OUTPUT_FILE_NAME + "All.csv")
+    for hour, data in byHour:
+        data.to_csv(OUTPUT_FILE_NAME + "All - Hour " + str(hour) + ".csv")
 
-    print("Average Time Spent Waiting:", transit_duration_df["Time Spent - Waiting"].mean())
-    print("Average Time Spent On Bus:", transit_duration_df["Time Spent - Bus"].mean())
-    print("Average Time Spent Walking:", transit_duration_df["Time Spent - Walking"].mean())
-    print()
-    print("Average Time Spent Waiting:", eppDF["Wait Time (min)"].mean())
-    print("Average Time Spent - Ride Share:", eppDF["Ride Duration (min)"].mean())
+    # print("Average Time Spent Waiting:", transit_duration_df["Time Spent - Waiting"].mean())
+    # print("Average Time Spent On Bus:", transit_duration_df["Time Spent - Bus"].mean())
+    # print("Average Time Spent Walking:", transit_duration_df["Time Spent - Walking"].mean())
+    # print()
+    # print("Average Time Spent Waiting:", eppDF["Wait Time (min)"].mean())
+    # print("Average Time Spent - Ride Share:", eppDF["Ride Duration (min)"].mean())
