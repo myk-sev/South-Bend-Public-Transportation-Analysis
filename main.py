@@ -99,7 +99,15 @@ def pool_data(rides: list):
 
 def execute_all_api_calls(all_rides, api_key):
     """Retrieves quickest public transportation directions from Google API. Result is archived on machine."""
+    cwd = getcwd()
+    exising_jsons = listdir(cwd + "\\" + ARCHIVE_DIR)
+    archived_ids = [int(file_name.removesuffix(".json")) for file_name in exising_jsons]
+
     for ride in all_rides:
+        if ride["ID"] in archived_ids:
+            print("ID", ride["ID"], "skipped.")
+            continue
+
         time.sleep(1 / API_CALL_RATE)
 
         request_url = construct_request(ride, api_key)
@@ -255,8 +263,7 @@ def massage_time(source_unix_time:int, target_week_unix:int) -> int:
     target_week_datetime = datetime.date.fromtimestamp(target_week_unix) # time class compatible with time delta class
     new_day = target_week_datetime + one_day_delta * (source_day_of_the_week - target_day_of_the_week)
     new_tuple = new_day.timetuple()
-    print(target_week_datetime, source_day_of_the_week, target_day_of_the_week, new_day, new_tuple.tm_mon)
-
+    
     combined_tuple = (new_tuple.tm_year, #year
                       new_tuple.tm_mon,  # month
                       new_tuple.tm_mday,  # day
