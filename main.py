@@ -10,13 +10,14 @@ from os.path import isdir
 
 from numpy.ma.extras import average
 
-OUTPUT_FILE_NAME = "Time Splits - All (2023)"
+OUTPUT_FILE_NAME = "Time Splits - All (2023).csv"
 RIDES_FILE_PATH = "Data\\EPP_Uber_2023.csv"
+
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
 ARCHIVE_DIR = "2023_archive"
 API_CALL_RATE = 25 #per second
-NEW_DATA = True #set this to true if this script is being executed on a data set for the first time
+NEW_DATA = False #set this to true if this script is being executed on a data set for the first time
 
 DATA_TZ = -5 #offset relative to UTC in hours
 LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
@@ -63,6 +64,13 @@ def retrieve_request_time(df: pd.core.frame.DataFrame, i:int) -> int:
     """Construct unix time from time recording in main data file."""
     request_date = clean_date_data(df.iloc[i]["Request Date (Local)"])
     request_time = clean_time_data(df.iloc[i]["Request Time (Local)"])
+    unix_time = calculate_epoch_time(request_date, request_time)
+    return unix_time
+
+def retrieve_drop_off_time(df: pd.core.frame.DataFrame, i:int) -> int:
+    """Construct unix time from time recording in main data file."""
+    request_date = clean_date_data(df.iloc[i]["Drop-off Date (Local)"])
+    request_time = clean_time_data(df.iloc[i]["Drop-off Time (Local)"])
     unix_time = calculate_epoch_time(request_date, request_time)
     return unix_time
 
@@ -185,6 +193,9 @@ def retrieve_transit_durations(api_call_results, travel_modes) -> int:
         arrival_time = api_call_results["routes"][0]["legs"][0]["arrival_time"]["value"]
         request_time = ride["Request Time"]
         duration = int((arrival_time - request_time) / 60)
+        #print("\tArrival Time:", arrival_time)
+        #print("\tRequest Time:", request_time)
+
 
     else: #walking directions
         duration = int(api_call_results["routes"][0]["legs"][0]["duration"]["value"] / 60)
@@ -263,7 +274,7 @@ def massage_time(source_unix_time:int, target_week_unix:int) -> int:
     target_week_datetime = datetime.date.fromtimestamp(target_week_unix) # time class compatible with time delta class
     new_day = target_week_datetime + one_day_delta * (source_day_of_the_week - target_day_of_the_week)
     new_tuple = new_day.timetuple()
-    
+
     combined_tuple = (new_tuple.tm_year, #year
                       new_tuple.tm_mon,  # month
                       new_tuple.tm_mday,  # day
@@ -314,7 +325,7 @@ def test(ride_data):
 
 
 def load_json_by_id(ride_id: int) -> dict:
-    path = getcwd() + f"\\archive\\{ride_id}.json"
+    path = getcwd() + '\\' + ARCHIVE_DIR + f"\\{ride_id}.json"
     with open(path, 'r') as file:
         api_call_results = json.load(file)
     return api_call_results
@@ -395,7 +406,7 @@ def extract_travel_by_mode(route_id):
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
     eppDF = pd.read_csv(RIDES_FILE_PATH)
-    print(construct_api_call_for_id(0))
+
     #retrieve data from file
     data = []
     for i in range(eppDF.shape[0]): #loops through all rows in source data
@@ -403,8 +414,11 @@ if __name__ == "__main__":
         ride["ID"] = i
         ride["Start"], ride["End"] = retrieve_coords(eppDF, i)
         ride["Request Time"] = retrieve_request_time(eppDF, i)
-        data.append(ride)
+        ride["Drop-off Time"] = retrieve_drop_off_time(eppDF, i)
+        ride["Ride Share - Total Time"] =  ride["Drop-off Time"] - ride["Request Time"]
 
+        data.append(ride)
+    print("Average Rideshare Length:", sum(ride["Ride Share - Total Time"] for ride in data)/len(data))
     #moves historic times into the window of API calculation
     for ride in data:
         original_unix_time = ride["Request Time"]
@@ -417,7 +431,7 @@ if __name__ == "__main__":
         execute_all_api_calls(data, api_key)
 
     #process api call data
-    archive_path = getcwd() + "\\archive"
+    archive_path = getcwd() + '\\' + ARCHIVE_DIR
     file_names = listdir(archive_path)
     ids = [int(file_name.removesuffix(".json")) for file_name in file_names]
 
@@ -431,16 +445,16 @@ if __name__ == "__main__":
             if api_call_results["status"] in ["ZERO_RESULTS", "UNKNOWN_ERROR"]:  # this occurs when Google could not find a reasonable connecting route
                 continue
 
-            try:
-                travel_modes = get_travel_modes(api_call_results)
-            except:
-                print("ID:", ride["ID"])
-                raise
-            if "DRIVING" in travel_modes:  # ensures no driving directions were given
-                print("Driving route detected: " + str(ride["ID"]))
-                continue
+            # try:
+            travel_modes = get_travel_modes(api_call_results)
+            # except:
+            #     print("ID:", ride["ID"])
+            #     raise
+            # if "DRIVING" in travel_modes:  # ensures no driving directions were given
+            #     print("Driving route detected: " + str(ride["ID"]))
+            #     continue
 
-
+            #print("ID:", ride["ID"])
             duration = retrieve_transit_durations(api_call_results, travel_modes)
             ride["Transit Duration"] = duration
             ride["Travel Mode"] = travel_modes
@@ -451,17 +465,17 @@ if __name__ == "__main__":
     #temporary time
     hour_column = []
     for ride in data:
-        if "Transit Duration" in ride:
+        if "Transit Duration" in ride: #only present if API call was successful in creating public transportation directions
             hour = int(military_time_from_unix(ride["Request Time"]).split(":")[0])
             hour_column.append(hour)
     transit_duration_df["Hour"] = hour_column
 
     #epp to public transit ratio
-    eppDurations = eppDF[["ID", "Total Time (min)"]]
-    publicTransitDurations = transit_duration_df[["ID", "Transit Duration"]]
-    mergedDF = pd.merge(eppDurations, publicTransitDurations, on="ID")
-    mergedDF["Ratio"] = mergedDF["Transit Duration"] / mergedDF["Total Time (min)"]
-    transit_duration_df["Duration Ratio"] = mergedDF["Ratio"]
+    # eppDurations = eppDF[["ID", "Total Time (min)"]]
+    # publicTransitDurations = transit_duration_df[["ID", "Transit Duration"]]
+    # mergedDF = pd.merge(eppDurations, publicTransitDurations, on="ID")
+    # mergedDF["Ratio"] = mergedDF["Transit Duration"] / mergedDF["Total Time (min)"]
+    # transit_duration_df["Duration Ratio"] = mergedDF["Ratio"]
 
     #time splits
     walking_times = [extract_travel_by_mode(int(route["ID"]))["WALKING"]["TIME"] for i, route in transit_duration_df.iterrows()]
@@ -474,22 +488,23 @@ if __name__ == "__main__":
             bus_times.append(time_split["TRANSIT"]["TIME"])
         else:
             bus_times.append(0)
+
     transit_duration_df["Time Spent - Bus"] = bus_times
 
     transit_duration_df["Time Spent - Waiting"] = transit_duration_df["Transit Duration"] - (transit_duration_df["Time Spent - Bus"] + transit_duration_df["Time Spent - Walking"])
 
     #file creation
-    # walkingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Walking"]]
-    # busTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus"]]
-    # waitingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Waiting"]]
+    walkingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Walking"]]
+    busTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus"]]
+    waitingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Waiting"]]
     allTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus", "Time Spent - Walking", "Time Spent - Waiting"]]
     byHour = allTimesDF.groupby("Hour")
 
-    # walkingTimesDF.to_csv(OUTPUT_FILE_NAME + "Walking.csv")
-    # busTimesDF.to_csv(OUTPUT_FILE_NAME + "Public Transit.csv")
-    # waitingTimesDF.to_csv(OUTPUT_FILE_NAME + "Waiting.csv")
-    for hour, data in byHour:
-        data.to_csv(OUTPUT_FILE_NAME + "All - Hour " + str(hour) + ".csv")
+    walkingTimesDF.to_csv(OUTPUT_FILE_NAME + "Walking.csv")
+    busTimesDF.to_csv(OUTPUT_FILE_NAME + "Public Transit.csv")
+    waitingTimesDF.to_csv(OUTPUT_FILE_NAME + "Waiting.csv")
+    allTimesDF.to_csv(OUTPUT_FILE_NAME)
+
 
     # print("Average Time Spent Waiting:", transit_duration_df["Time Spent - Waiting"].mean())
     # print("Average Time Spent On Bus:", transit_duration_df["Time Spent - Bus"].mean())
