@@ -3,9 +3,16 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import pandas as pd
 
+BUS_DATA_FILE_NAME = "filename.csv"
+OUTPUT_FILE_NAME = "image.png"
+
 
 if __name__ == "__main__":
-    data = pd.read_csv("Time Splits - All (2023) (less than 200m).csv")
+    ### Data Processing ###
+    # read data from file
+    data = pd.read_csv(BUS_DATA_FILE_NAME)
+
+    # calculations
     byHour = {hour: df for hour, df in data.groupby("Hour")}
     averageTimes = {}
     for hour in byHour:
@@ -15,10 +22,7 @@ if __name__ == "__main__":
             "Waiting": byHour[hour]["Time Spent - Waiting"].mean()
         }
 
-    # #publicTransportData = {"Transit": 24, "Waiting": 205, "Walking": 23} #all inclusive data
-    # publicTransportData = {"Transit": 20, "Waiting": 22, "Walking": 20} #<2 hr commute time
-    # rideShareData = {"Transit": 13, "Waiting": 15, "Walking": 0}
-
+    ### Layer Creation ###
     # Bottom Layer
     bottomData = [averageTimes[hour]["Bus"] for hour in range(24)]
     transitInput = {"hour": [i for i in range(24)], "times": bottomData}
@@ -31,8 +35,7 @@ if __name__ == "__main__":
     topData = [bottomData[hour] + middleData[hour] + averageTimes[hour]["Walking"] for hour in range(24)]
     walkingInput = {"hour": [i for i in range(24)], "times": topData}
 
-
-
+    ### Chart Creation ###
     sns.set_theme(style="darkgrid")
     plt.figure(figsize=(14, 14))
 
@@ -49,7 +52,5 @@ if __name__ == "__main__":
     plt.ylabel("Minutes")
     plt.xlabel("Hour")
 
-    #ax1.bar_label(ax1.containers[0])
-    plt.savefig("Transit Times Stacked By Hour (2023) (less than 200m).png")
-    #plt.savefig("Transit Times Stacked By Hour (Total Duration 200min or Below) (2023).png")
+    plt.savefig(OUTPUT_FILE_NAME)
     plt.show()

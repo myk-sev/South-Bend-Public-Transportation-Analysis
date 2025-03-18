@@ -1,5 +1,3 @@
-from idlelib.pyparse import trans
-
 import requests
 import pandas as pd
 import time
@@ -8,33 +6,28 @@ import json
 from os import getcwd, mkdir, listdir
 from os.path import isdir
 
-from numpy.ma.extras import average
-
-OUTPUT_FILE_NAME = "Time Splits - All (2023).csv"
-RIDES_FILE_PATH = "Data\\EPP_Uber_2023.csv"
+OUTPUT_FILE_NAME = "time_splits.csv"
+RIDES_FILE_PATH = "epp_data.csv"
 
 ERRORS_FILE_NAME = "errors.txt"
 API_KEY_FILE_NAME = "api-key.txt"
 ARCHIVE_DIR = "2023_archive"
 API_CALL_RATE = 25 #per second
-NEW_DATA = False #set this to true if this script is being executed on a data set for the first time
+NEW_DATA = False #set this to true the first time the script is run to create an archive of API call results
 
-DATA_TZ = -5 #offset relative to UTC in hours
-LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time
-TARGET_WEEK = "2/5/2025"
+DATA_TZ = -5 #offset relative to UTC in hours, do not change this
+LOCAL_TZ = -6 #necessary as mktime utilizes system time zone for conversion to epoch time, set this to the UTC offset of your timezone
+TARGET_WEEK = "2/13/2025"
 
-### Test Routes ###
-HOME_TO_SCHOOL = {"Start": (41.525,-87.507), "End": (41.555,-87.335), "Request Time": int(time.time())}
-EPP_EXAMPLE = {"Start": (41.691,-86.181), "End": (41.704,-86.236), "Request Time": int(time.time())}
-###################
+def retrieve_api_key(file_name: str) -> str:
+    """Retrieves the contents of the specified file."""
+    api_key = ""
+    with open(file_name, "r") as file:
+        api_key = file.read()
 
-def encode_endpoints (start_coords: tuple, end_coords: tuple) -> str :
-    """Formats coordinates for inclusion in request url."""
-    origin = f"origin={start_coords[0]},{start_coords[1]}"
-    destination = f"destination={end_coords[0]},{end_coords[1]}"
+    assert api_key != ""
 
-    return f"{origin}&{destination}"
-
+    return api_key
 
 def construct_request(ride_data: dict, api_key: str) -> str:
     """Creates the request used to retrieve route recommendations from Google."""
@@ -48,6 +41,13 @@ def construct_request(ride_data: dict, api_key: str) -> str:
 
     return request_url
 
+def encode_endpoints (start_coords: tuple, end_coords: tuple) -> str :
+    """Formats coordinates for inclusion in request url."""
+    origin = f"origin={start_coords[0]},{start_coords[1]}"
+    destination = f"destination={end_coords[0]},{end_coords[1]}"
+
+    return f"{origin}&{destination}"
+
 
 def retrieve_coords(df: pd.core.frame.DataFrame, i:int) -> tuple:
     """Retrieve start & end coordinates from EPP data file."""
@@ -58,21 +58,6 @@ def retrieve_coords(df: pd.core.frame.DataFrame, i:int) -> tuple:
 
     route_data = ((start_lat, start_long), (end_lat,end_long))
     return route_data
-
-
-def retrieve_request_time(df: pd.core.frame.DataFrame, i:int) -> int:
-    """Construct unix time from time recording in main data file."""
-    request_date = clean_date_data(df.iloc[i]["Request Date (Local)"])
-    request_time = clean_time_data(df.iloc[i]["Request Time (Local)"])
-    unix_time = calculate_epoch_time(request_date, request_time)
-    return unix_time
-
-def retrieve_drop_off_time(df: pd.core.frame.DataFrame, i:int) -> int:
-    """Construct unix time from time recording in main data file."""
-    request_date = clean_date_data(df.iloc[i]["Drop-off Date (Local)"])
-    request_time = clean_time_data(df.iloc[i]["Drop-off Time (Local)"])
-    unix_time = calculate_epoch_time(request_date, request_time)
-    return unix_time
 
 
 def pool_data(rides: list):
@@ -163,7 +148,6 @@ def add_transit_durations(rides) -> list:
 
             with open(archive_path+ "\\" + str(ride["ID"]) + ".json", 'r') as file:
                 api_call_results = json.load(file)
-                text = "".join(line for line in file)
 
             #these skip archived results that do not provide public transit direction
             if api_call_results["status"] == "ZERO_RESULTS": #this occurs when Google could not find a reasonable connecting route
@@ -187,20 +171,35 @@ def add_transit_durations(rides) -> list:
 
     return rides
 
+
 def retrieve_transit_durations(api_call_results, travel_modes) -> int:
     """Opens archived API call to retrieves transit duration."""
     if "TRANSIT" in travel_modes: #public transit directions
         arrival_time = api_call_results["routes"][0]["legs"][0]["arrival_time"]["value"]
         request_time = ride["Request Time"]
         duration = int((arrival_time - request_time) / 60)
-        #print("\tArrival Time:", arrival_time)
-        #print("\tRequest Time:", request_time)
-
 
     else: #walking directions
         duration = int(api_call_results["routes"][0]["legs"][0]["duration"]["value"] / 60)
 
     return duration
+
+def archive_api_call_results(result_json: dict, route_id: int):
+    """Archives results of api calls for future reference."""
+    path = getcwd() + "\\" + ARCHIVE_DIR
+    if not isdir(path): # check for existence of archive folder, if it does not exist create it
+        mkdir(path)
+
+    serialized_json = json.dumps(result_json, indent=4)
+    with open(f"{path}\\{route_id}.json", "w+") as file:
+        file.write(serialized_json)
+
+
+def load_json_by_id(ride_id: int) -> dict:
+    path = getcwd() + '\\' + ARCHIVE_DIR + f"\\{ride_id}.json"
+    with open(path, 'r') as file:
+        api_call_results = json.load(file)
+    return api_call_results
 
 
 def get_travel_modes(request_json):
@@ -209,6 +208,28 @@ def get_travel_modes(request_json):
     travel_modes = {step["travel_mode"] for step in directions}
 
     return travel_modes
+
+
+def extract_travel_by_mode(route_id):
+    """Sums time and distance per travel mode in each route."""
+    api_call_results = load_json_by_id(route_id)
+    segments = api_call_results["routes"][0]["legs"][0]["steps"] #zone in on portion of json holding related info
+    data = {travel_mode: {"DISTANCE": 0, "TIME":0} for travel_mode in get_travel_modes(api_call_results)} #create base structure for holding data
+
+    for segment in segments:
+        travel_mode = segment["travel_mode"]
+        distance = segment["distance"]["value"]
+        travel_time = segment["duration"]["value"]
+
+        data[travel_mode]["DISTANCE"] += distance
+        data[travel_mode]["TIME"] += travel_time
+
+    #data clean up and unit conversion
+    for travel_mode in data:
+        data[travel_mode]["DISTANCE"] = data[travel_mode]["DISTANCE"] / 1609.34  #meters to miles
+        data[travel_mode]["TIME"] = int(data[travel_mode]["TIME"] / 60 ) #seconds to minutes
+
+    return data
 
 
 def clean_date_data(date_str: str) -> str:
@@ -229,6 +250,22 @@ def clean_time_data(time_str: str) -> str:
         time_str = '0' + time_str #double-digit formatting is required for minutes and hours
 
     return time_str
+
+
+def retrieve_request_time(df: pd.core.frame.DataFrame, i:int) -> int:
+    """Construct unix time from time recording in main data file."""
+    request_date = clean_date_data(df.iloc[i]["Request Date (Local)"])
+    request_time = clean_time_data(df.iloc[i]["Request Time (Local)"])
+    unix_time = calculate_epoch_time(request_date, request_time)
+    return unix_time
+
+
+def retrieve_drop_off_time(df: pd.core.frame.DataFrame, i:int) -> int:
+    """Construct unix time from time recording in main data file."""
+    request_date = clean_date_data(df.iloc[i]["Drop-off Date (Local)"])
+    request_time = clean_time_data(df.iloc[i]["Drop-off Time (Local)"])
+    unix_time = calculate_epoch_time(request_date, request_time)
+    return unix_time
 
 
 def calculate_epoch_time(date_str, time_str)->int:
@@ -290,46 +327,16 @@ def massage_time(source_unix_time:int, target_week_unix:int) -> int:
     return combined_unix
 
 
-def retrieve_api_key(file_name: str) -> str:
-    """Retrieves the contents of the specified file."""
-    api_key = ""
-    with open(file_name, "r") as file:
-        api_key = file.read()
+def military_time_from_unix(unix_time:int) -> str:
+    """Turns unix time back into a human-readable time, while accounting for timezone changes."""
+    time_struct = time.localtime(unix_time)
+    time_hour = time_struct.tm_hour + (DATA_TZ - LOCAL_TZ) if time_struct.tm_hour + (DATA_TZ - LOCAL_TZ) < 24 else 0
+    time_min = time_struct.tm_min
+    military_time = str(time_hour) + ":" + str(time_min)
+    return military_time
 
-    assert api_key != ""
-
-    return api_key
-
-
-def archive_api_call_results(result_json: dict, route_id: int):
-    """Archives results of api calls for future reference."""
-    path = getcwd() + "\\" + ARCHIVE_DIR
-    if not isdir(path): # check for existence of archive folder, if it does not exist create it
-        mkdir(path)
-
-    serialized_json = json.dumps(result_json, indent=4)
-    with open(f"{path}\\{route_id}.json", "w+") as file:
-        file.write(serialized_json)
-
-
-def test(ride_data):
-    api_key = retrieve_api_key(API_KEY_FILE_NAME)
-    request_url = construct_request(ride_data, api_key)
-    print(request_url)
-    route = requests.get(request_url)
-    request_json = route.json()
-    duration = request_json["routes"][0]["legs"][0]["duration"]["text"]
-    print(duration)
-
-    archive_api_call_results(request_json, "test")
-
-
-def load_json_by_id(ride_id: int) -> dict:
-    path = getcwd() + '\\' + ARCHIVE_DIR + f"\\{ride_id}.json"
-    with open(path, 'r') as file:
-        api_call_results = json.load(file)
-    return api_call_results
-
+#################### UTILITIES ####################
+#misc functions used for debugging & testing
 
 def construct_api_call_for_id(ride_id: int) -> str:
     """Creates the html address used to make the call for a specific ride."""
@@ -344,7 +351,6 @@ def construct_api_call_for_id(ride_id: int) -> str:
 
     api_call_html = construct_request(ride_data, api_key)
     return api_call_html
-
 
 def generate_mode_counts() -> dict:
     """Counts the number of routes utilizing each combination of transportation options."""
@@ -371,34 +377,7 @@ def generate_mode_counts() -> dict:
 
     return travel_counts
 
-def military_time_from_unix(unix_time:int) -> str:
-    """Turns unix time back into a human-readable time, while accounting for timezone changes."""
-    time_struct = time.localtime(unix_time)
-    time_hour = time_struct.tm_hour + (DATA_TZ - LOCAL_TZ) if time_struct.tm_hour + (DATA_TZ - LOCAL_TZ) < 24 else 0
-    time_min = time_struct.tm_min
-    military_time = str(time_hour) + ":" + str(time_min)
-    return military_time
-
-def extract_travel_by_mode(route_id):
-    """Sums time and distance per travel mode in each route."""
-    api_call_results = load_json_by_id(route_id)
-    segments = api_call_results["routes"][0]["legs"][0]["steps"] #zone in on portion of json holding related info
-    data = {travel_mode: {"DISTANCE": 0, "TIME":0} for travel_mode in get_travel_modes(api_call_results)} #create base structure for holding data
-
-    for segment in segments:
-        travel_mode = segment["travel_mode"]
-        distance = segment["distance"]["value"]
-        travel_time = segment["duration"]["value"]
-
-        data[travel_mode]["DISTANCE"] += distance
-        data[travel_mode]["TIME"] += travel_time
-
-    #data clean up and unit conversion
-    for travel_mode in data:
-        data[travel_mode]["DISTANCE"] = data[travel_mode]["DISTANCE"] / 1609.34  #meters to miles
-        data[travel_mode]["TIME"] = int(data[travel_mode]["TIME"] / 60 ) #seconds to minutes
-
-    return data
+###################################################
 
 
 
@@ -406,6 +385,7 @@ def extract_travel_by_mode(route_id):
 if __name__ == "__main__":
     api_key = retrieve_api_key(API_KEY_FILE_NAME)
     eppDF = pd.read_csv(RIDES_FILE_PATH)
+    print(construct_api_call_for_id(10))
 
     #retrieve data from file
     data = []
@@ -418,7 +398,7 @@ if __name__ == "__main__":
         ride["Ride Share - Total Time"] =  ride["Drop-off Time"] - ride["Request Time"]
 
         data.append(ride)
-    print("Average Rideshare Length:", sum(ride["Ride Share - Total Time"] for ride in data)/len(data))
+
     #moves historic times into the window of API calculation
     for ride in data:
         original_unix_time = ride["Request Time"]
@@ -445,16 +425,8 @@ if __name__ == "__main__":
             if api_call_results["status"] in ["ZERO_RESULTS", "UNKNOWN_ERROR"]:  # this occurs when Google could not find a reasonable connecting route
                 continue
 
-            # try:
             travel_modes = get_travel_modes(api_call_results)
-            # except:
-            #     print("ID:", ride["ID"])
-            #     raise
-            # if "DRIVING" in travel_modes:  # ensures no driving directions were given
-            #     print("Driving route detected: " + str(ride["ID"]))
-            #     continue
 
-            #print("ID:", ride["ID"])
             duration = retrieve_transit_durations(api_call_results, travel_modes)
             ride["Transit Duration"] = duration
             ride["Travel Mode"] = travel_modes
@@ -498,17 +470,8 @@ if __name__ == "__main__":
     busTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus"]]
     waitingTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Waiting"]]
     allTimesDF = transit_duration_df[ ["ID", "Pickup Latitude", "Pickup Longitude", "Transit Duration", "Hour", "Time Spent - Bus", "Time Spent - Walking", "Time Spent - Waiting"]]
-    byHour = allTimesDF.groupby("Hour")
 
     walkingTimesDF.to_csv(OUTPUT_FILE_NAME + "Walking.csv")
     busTimesDF.to_csv(OUTPUT_FILE_NAME + "Public Transit.csv")
     waitingTimesDF.to_csv(OUTPUT_FILE_NAME + "Waiting.csv")
     allTimesDF.to_csv(OUTPUT_FILE_NAME)
-
-
-    # print("Average Time Spent Waiting:", transit_duration_df["Time Spent - Waiting"].mean())
-    # print("Average Time Spent On Bus:", transit_duration_df["Time Spent - Bus"].mean())
-    # print("Average Time Spent Walking:", transit_duration_df["Time Spent - Walking"].mean())
-    # print()
-    # print("Average Time Spent Waiting:", eppDF["Wait Time (min)"].mean())
-    # print("Average Time Spent - Ride Share:", eppDF["Ride Duration (min)"].mean())
