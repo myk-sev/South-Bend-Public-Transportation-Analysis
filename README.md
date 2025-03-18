@@ -17,18 +17,17 @@ pandas: For data manipulation and analysis.
 matplotlib: For creating visualizations.
 numpy: For numerical operations.
 You can install these packages using pip:
-
-bash
-Copy
-Edit
+'''
 pip install pandas matplotlib numpy
+'''
 
 ## Usage
-Data Preparation: Place the raw data files in the appropriate directory as expected by temp_data_processing.py.
-Data Processing: Run temp_data_processing.py to preprocess the data.
-Analysis: Execute main.py to perform the analysis and generate insights.
-Visualization: Use stacked_bar_chart_generation.py and stacked_bar_chart_generation_hourly.py to create visual representations of the data.
-Contributions
+1. Data Preparation: Place the raw data files in the appropriate directory as expected by temp_data_processing.py.
+2. Data Processing: Run temp_data_processing.py to preprocess the data.
+3. Analysis: Execute main.py to perform the analysis and generate insights.
+4. Visualization: Use stacked_bar_chart_generation.py and stacked_bar_chart_generation_hourly.py to create visual representations of the data.
+   
+## Contributions
 Contributions to enhance the analyses or add new features are welcome. Please fork the repository, make your changes, and submit a pull request for review.
 
 ## License
